@@ -51,6 +51,21 @@ function isVectorPath(path: string): boolean {
   );
 }
 
+const VECTOR_ORIGIN = 'https://vector.buildwithoracle.com';
+
+/** True when the current page is served from the studio bundle's prod hosts (studio.* or local.*). */
+export function isStudioHost(): boolean {
+  if (typeof window === 'undefined') return false;
+  const h = window.location.hostname;
+  return h.startsWith('studio.') || h.startsWith('local.');
+}
+
+/** Paths that should jump cross-origin to vector.* from the studio bundle. */
+function isVectorPath(path: string): boolean {
+  const clean = path.split('?')[0];
+  return clean === '/playground' || clean.startsWith('/playground/');
+}
+
 type NavSet = { main: NavItem[]; tools: NavItem[] };
 
 type MenuApiItem = {
