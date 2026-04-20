@@ -7,7 +7,6 @@ import type { Document } from '../api/oracle';
 import { SidebarLayout } from '../components/SidebarLayout';
 import { getDocDisplayInfo } from '../utils/docDisplay';
 import { Badge } from '../components/ui/Badge';
-import { Modal } from '../components/ui/Modal';
 
 interface LocationState {
   doc?: Document;
@@ -25,8 +24,6 @@ export function DocDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [neighbors, setNeighbors] = useState<{ prev: Document | null; next: Document | null }>({ prev: null, next: null });
-  const [showRawModal, setShowRawModal] = useState(false);
-  const [rawContent, setRawContent] = useState<string | null>(null);
 
 
   // Navigate to a document
@@ -148,21 +145,20 @@ export function DocDetail() {
     }
   }
 
-  // Show raw file in modal
-  async function handleShowRawFile(e: React.MouseEvent) {
+  // Navigate to raw file preview page (replaces the old in-place modal —
+  // the inbound HEAD's `${API_BASE}/file` URL normalization is preserved
+  // inside the new RawFile page via the `getFile()` API helper).
+  function handleShowRawFile(e: React.MouseEvent) {
     e.preventDefault();
     if (!doc?.source_file) return;
 
-    try {
-      const res = await fetch(`${API_BASE}/file?path=${encodeURIComponent(doc.source_file)}${doc.project ? `&project=${encodeURIComponent(doc.project)}` : ''}`);
-      if (res.ok) {
-        const content = await res.text();
-        setRawContent(content);
-        setShowRawModal(true);
+    navigate('/raw', {
+      state: {
+        sourceFile: doc.source_file,
+        project: doc.project,
+        dbContent: doc.content, // fallback if local file not found
       }
-    } catch (err) {
-      console.error('Failed to load raw file:', err);
-    }
+    });
   }
 
   // Strip YAML frontmatter only, keep all content
@@ -386,44 +382,18 @@ export function DocDetail() {
                     </a>
                   )}
                 </div>
-                {!fileNotFound ? (
-                  <button
-                    onClick={handleShowRawFile}
-                    className="text-xs text-text-muted font-mono no-underline bg-transparent border-none p-0 cursor-pointer text-left transition-colors duration-200 hover:text-accent hover:underline"
-                  >
-                    📁 {info.displayPath}
-                  </button>
-                ) : (
-                  <span className="text-xs text-text-muted font-mono opacity-70">📁 {info.displayPath}</span>
-                )}
+                <button
+                  onClick={handleShowRawFile}
+                  className="text-xs text-text-muted font-mono no-underline bg-transparent border-none p-0 cursor-pointer text-left transition-colors duration-200 hover:text-accent hover:underline"
+                >
+                  📁 {info.displayPath}
+                </button>
               </>
             );
           })()}
         </div>
       </footer>
 
-      {/* Raw File Modal */}
-      {showRawModal && rawContent && (
-        <Modal onClose={() => setShowRawModal(false)} maxWidth="1100px">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-            <span className="text-sm font-mono text-text-secondary">📁 {doc.source_file}</span>
-            <button
-              className="bg-transparent border-none text-text-muted text-2xl cursor-pointer p-0 leading-none transition-colors duration-200 hover:text-accent"
-              onClick={() => setShowRawModal(false)}
-            >
-              ×
-            </button>
-          </div>
-          <pre className="p-5 overflow-auto text-[13px] font-mono text-text-primary whitespace-pre-wrap break-words m-0 leading-relaxed">
-            {rawContent.split('\n').map((line, i) => (
-              <div key={i} className="flex">
-                <span className="text-text-muted opacity-50 min-w-[45px] pr-4 text-right select-none border-r border-border mr-4">{i + 1}</span>
-                <span className="flex-1">{line || ' '}</span>
-              </div>
-            ))}
-          </pre>
-        </Modal>
-      )}
     </article>
     </SidebarLayout>
   );

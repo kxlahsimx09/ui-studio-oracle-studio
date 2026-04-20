@@ -34,6 +34,12 @@ const STATUS_COLORS: Record<string, string> = {
   closed: '#6b7280',
 };
 
+type TabKey = 'open' | 'closed';
+
+function isOpen(status: string) {
+  return status !== 'closed';
+}
+
 export function Forum() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -44,14 +50,34 @@ export function Forum() {
 
   const threadId = searchParams.get('thread');
   const showNew = searchParams.get('new') === 'true';
+  const tabParam = searchParams.get('tab');
+  const activeTab: TabKey = tabParam === 'closed' ? 'closed' : 'open';
+
+  const openCount = threads.filter(t => isOpen(t.status)).length;
+  const closedCount = threads.length - openCount;
+  const visibleThreads = threads.filter(t =>
+    activeTab === 'open' ? isOpen(t.status) : !isOpen(t.status)
+  );
 
   useEffect(() => { loadThreads(); }, []);
 
   useEffect(() => {
     if (threadId) selectThread(parseInt(threadId, 10));
-    else if (threads.length > 0 && !showNew) setSearchParams({ thread: threads[0].id.toString() });
+    else if (visibleThreads.length > 0 && !showNew) {
+      const next = new URLSearchParams(searchParams);
+      next.set('thread', visibleThreads[0].id.toString());
+      setSearchParams(next);
+    }
     else setSelected(null);
-  }, [threadId, threads]);
+  }, [threadId, threads, activeTab]);
+
+  function switchTab(tab: TabKey) {
+    const next = new URLSearchParams(searchParams);
+    if (tab === 'open') next.delete('tab'); else next.set('tab', 'closed');
+    next.delete('thread');
+    setSearchParams(next);
+    setSelected(null);
+  }
 
   async function loadThreads() {
     const data = await (await fetch(`${API_BASE}/threads`)).json();
@@ -61,7 +87,10 @@ export function Forum() {
   async function selectThread(id: number) {
     const data = await (await fetch(`${API_BASE}/thread/${id}`)).json();
     setSelected(data);
-    setSearchParams({ thread: id.toString() });
+    const next = new URLSearchParams(searchParams);
+    next.set('thread', id.toString());
+    next.delete('new');
+    setSearchParams(next);
   }
 
   async function handleSend(e: React.FormEvent) {
@@ -90,6 +119,13 @@ export function Forum() {
     const data = await (await fetch(`${API_BASE}/thread/${selected.thread.id}`)).json();
     setSelected(data);
     await loadThreads();
+    // Follow the thread to its new tab so it stays visible in the sidebar
+    const targetTab: TabKey = isOpen(newStatus) ? 'open' : 'closed';
+    if (targetTab !== activeTab) {
+      const next = new URLSearchParams(searchParams);
+      if (targetTab === 'open') next.delete('tab'); else next.set('tab', 'closed');
+      setSearchParams(next);
+    }
   }
 
   return (
@@ -99,18 +135,45 @@ export function Forum() {
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-xs font-mono uppercase tracking-wide text-text-muted">Threads</h2>
           <button
-            onClick={() => { setSearchParams({ new: 'true' }); setSelected(null); }}
+            onClick={() => {
+              const next = new URLSearchParams(searchParams);
+              next.set('new', 'true');
+              next.delete('thread');
+              setSearchParams(next);
+              setSelected(null);
+            }}
             className="bg-accent text-white px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer border-none hover:bg-accent-hover transition-all duration-150"
           >
             + New
           </button>
         </div>
 
+        {/* Tabs — Open / Closed */}
+        <div className="flex gap-1 mb-3 border-b border-border">
+          <TabButton
+            label="Open"
+            count={openCount}
+            active={activeTab === 'open'}
+            onClick={() => switchTab('open')}
+          />
+          <TabButton
+            label="Closed"
+            count={closedCount}
+            active={activeTab === 'closed'}
+            onClick={() => switchTab('closed')}
+          />
+        </div>
+
         <div className="flex-1 overflow-y-auto space-y-1">
-          {threads.map(t => (
+          {visibleThreads.map(t => (
             <div
               key={t.id}
-              onClick={() => setSearchParams({ thread: t.id.toString() })}
+              onClick={() => {
+                const next = new URLSearchParams(searchParams);
+                next.set('thread', t.id.toString());
+                next.delete('new');
+                setSearchParams(next);
+              }}
               className={`p-3 rounded-xl cursor-pointer transition-all duration-150 border ${
                 selected?.thread.id === t.id
                   ? 'bg-accent/10 border-accent/30'
@@ -124,7 +187,15 @@ export function Forum() {
               </div>
             </div>
           ))}
-          {threads.length === 0 && <div className="text-center text-text-muted py-8 text-sm">No threads yet</div>}
+          {visibleThreads.length === 0 && (
+            <div className="text-center text-text-muted py-8 text-sm">
+              {threads.length === 0
+                ? 'No threads yet'
+                : activeTab === 'open'
+                  ? 'No open threads'
+                  : 'No closed threads'}
+            </div>
+          )}
         </div>
       </div>
 
@@ -165,7 +236,12 @@ export function Forum() {
             {/* Thread header */}
             <div className="flex items-center gap-3 px-6 py-5 mb-2 border-b border-border flex-wrap">
               <button
-                onClick={() => { setSelected(null); setSearchParams({}); }}
+                onClick={() => {
+                  setSelected(null);
+                  const next = new URLSearchParams();
+                  if (activeTab === 'closed') next.set('tab', 'closed');
+                  setSearchParams(next);
+                }}
                 className="md:hidden bg-transparent border-none text-text-muted cursor-pointer p-1 hover:text-accent transition-colors"
               >
                 ←
@@ -214,6 +290,21 @@ export function Forum() {
         )}
       </div>
     </div>
+  );
+}
+
+function TabButton({ label, count, active, onClick }: { label: string; count: number; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 py-2 text-xs font-mono uppercase tracking-wide cursor-pointer border-none bg-transparent -mb-px border-b-2 transition-colors duration-150 ${
+        active
+          ? 'text-accent border-accent'
+          : 'text-text-muted border-transparent hover:text-text-primary'
+      }`}
+    >
+      {label} <span className="ml-1 opacity-60">({count})</span>
+    </button>
   );
 }
 
