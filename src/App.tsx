@@ -28,6 +28,7 @@ import { Planets } from './pages/Planets';
 import { MenuEditor } from './pages/MenuEditor';
 import { Fleet } from './pages/Fleet';
 import { FleetSession } from './pages/FleetSession';
+import { RawFile } from './pages/RawFile';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { getStats } from './api/oracle';
 import { setVaultRepo } from './utils/docDisplay';
@@ -95,6 +96,7 @@ function AppContent() {
         <Route path="/planets" element={<RequireAuth><Planets /></RequireAuth>} />
         <Route path="/plugins" element={<RequireAuth><Plugins /></RequireAuth>} />
         <Route path="/schedule" element={<RequireAuth><Schedule /></RequireAuth>} />
+        <Route path="/raw" element={<RequireAuth><RawFile /></RequireAuth>} />
         <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
         <Route path="/menu" element={<RequireAuth><MenuEditor /></RequireAuth>} />
       </Routes>
