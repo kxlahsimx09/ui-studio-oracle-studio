@@ -22,6 +22,11 @@ export default defineConfig({
     port: 3000,
     allowedHosts: true,
     proxy: {
+      // Order matters: /api/maw must match before /api
+      '/api/maw': {
+        target: process.env.MAW_API_URL || 'http://localhost:3456',
+        rewrite: (p: string) => p.replace(/^\/api\/maw/, '/api')
+      },
       '/api': {
         target: process.env.ORACLE_API_URL || 'http://localhost:47778'
       }

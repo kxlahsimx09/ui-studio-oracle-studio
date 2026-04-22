@@ -35,6 +35,7 @@ Options:
 
 const PORT = parseInt(getArg('--port', '3000'), 10);
 const API_URL = getArg('--api', 'http://localhost:47778');
+const MAW_URL = getArg('--maw', 'http://localhost:3456');
 const DIST = join(import.meta.dirname, '..', 'dist');
 
 if (!existsSync(DIST)) {
@@ -67,6 +68,27 @@ Bun.serve({
   port: PORT,
   async fetch(req) {
     const url = new URL(req.url);
+
+    // Proxy /api/maw/* to maw-js (strip the /maw prefix so maw's own /api prefix lines up)
+    if (url.pathname.startsWith('/api/maw/')) {
+      const rewritten = url.pathname.replace(/^\/api\/maw/, '/api');
+      const target = `${MAW_URL}${rewritten}${url.search}`;
+      const headers = new Headers(req.headers);
+      headers.delete('host');
+      try {
+        return await fetch(target, {
+          method: req.method,
+          headers,
+          body: req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined,
+          redirect: 'follow',
+        });
+      } catch {
+        return new Response(JSON.stringify({ error: 'maw API unreachable', target: MAW_URL }), {
+          status: 502,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+    }
 
     // Proxy /api/* to arra-oracle
     if (url.pathname.startsWith('/api/')) {
