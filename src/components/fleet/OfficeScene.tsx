@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import type { ClaudeSession } from '../../api/maw';
+import type { ClaudeSession, FleetJob } from '../../api/maw';
 
 const DESKS_PER_ROW = 4;
 const DESK_ROWS = 1;
@@ -159,11 +159,71 @@ function Decor({ emoji, label, size = 'text-2xl' }: { emoji: string; label?: str
   );
 }
 
-interface Props {
-  sessions: ClaudeSession[];
+function formatRuntime(iso: string): string {
+  const diff = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (diff < 60) return `${diff}s`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ${diff % 60}s`;
+  const h = Math.floor(diff / 3600);
+  const m = Math.floor((diff % 3600) / 60);
+  return `${h}h ${m}m`;
 }
 
-export function OfficeScene({ sessions }: Props) {
+function Machine({ job }: { job: FleetJob | undefined }) {
+  const running = !!job;
+  const kind = job?.kind || 'regression';
+  const tooltip = job
+    ? `${kind} · pid ${job.pid} · ${formatRuntime(job.startedAt)}${job.singleTest ? `\n${job.singleTest}` : ''}${job.runId ? `\nrun ${job.runId}` : ''}`
+    : 'regression machine · idle';
+  return (
+    <div className="flex flex-col items-center" title={tooltip}>
+      <div
+        className={`relative flex h-14 w-14 items-center justify-center rounded-md border-2 bg-zinc-900 transition-all ${
+          running
+            ? 'border-emerald-500/70 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
+            : 'border-zinc-700 opacity-50'
+        }`}
+      >
+        <span className="text-2xl">🖥️</span>
+        {running && (
+          <>
+            {/* Three rack LEDs blinking in sequence */}
+            <span className="absolute left-1.5 bottom-1.5 flex gap-0.5">
+              <span className="h-1 w-1 rounded-full bg-emerald-400 animate-pulse" style={{ animationDelay: '0ms' }} />
+              <span className="h-1 w-1 rounded-full bg-emerald-400 animate-pulse" style={{ animationDelay: '200ms' }} />
+              <span className="h-1 w-1 rounded-full bg-emerald-400 animate-pulse" style={{ animationDelay: '400ms' }} />
+            </span>
+          </>
+        )}
+        <span
+          className={`absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full ring-2 ring-zinc-950 ${
+            running ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-600'
+          }`}
+        />
+      </div>
+      <span
+        className={`mt-1.5 rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold ring-1 ${
+          running
+            ? 'bg-emerald-950/60 text-emerald-200 ring-emerald-500/60'
+            : 'bg-zinc-950/60 text-zinc-500 ring-zinc-700'
+        }`}
+      >
+        {kind}
+      </span>
+      {running && (
+        <span className="mt-0.5 font-mono text-[9px] text-emerald-400/70">
+          {formatRuntime(job!.startedAt)}
+        </span>
+      )}
+    </div>
+  );
+}
+
+interface Props {
+  sessions: ClaudeSession[];
+  jobs?: FleetJob[];
+}
+
+export function OfficeScene({ sessions, jobs = [] }: Props) {
   const navigate = useNavigate();
 
   // Shared-desk model: only actively working agents occupy a desk.
@@ -198,7 +258,12 @@ export function OfficeScene({ sessions }: Props) {
               {atDesk.length} working · {breakPeople.length} on break · {sessions.length} total
             </p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-end gap-5">
+            {jobs.length > 0 ? (
+              jobs.map(j => <Machine key={j.pid} job={j} />)
+            ) : (
+              <Machine job={undefined} />
+            )}
             <Decor emoji="🪴" />
             <Decor emoji="🚪" label="entrance" />
           </div>

@@ -24,8 +24,21 @@ export interface ClaudeSession {
   jsonlPath: string;
 }
 
+export type JobKind = 'regression' | 'single-test';
+
+export interface FleetJob {
+  kind: JobKind;
+  pid: number;
+  startedAt: string;
+  runId?: string;
+  runDir?: string;
+  singleTest?: string;
+  script: string;
+}
+
 export interface FleetListResponse {
   sessions: ClaudeSession[];
+  jobs?: FleetJob[];
   total: number;
   generatedAt: string;
 }
