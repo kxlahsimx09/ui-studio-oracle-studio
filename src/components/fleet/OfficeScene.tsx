@@ -5,51 +5,99 @@ const DESKS_PER_ROW = 4;
 const DESK_ROWS = 1;
 const MAX_DESKS = DESKS_PER_ROW * DESK_ROWS;
 
+interface Role {
+  key: string;
+  label: string;
+  emoji: string;
+  color: string;          // Tailwind bg class for avatar
+  ringColor: string;      // Tailwind ring class
+}
+
+// Per-repo role inference. Edit this to add new repos / roles.
+const ROLES_BY_REPO: Record<string, Role> = {
+  'github.com/Soul-Brews-Studio/arra-oracle-v3': {
+    key: 'brew-ops', label: 'brew-ops', emoji: '🔧',
+    color: 'bg-cyan-600', ringColor: 'ring-cyan-400/60',
+  },
+  'github.com/Soul-Brews-Studio/maw-js': {
+    key: 'brew-ops', label: 'brew-ops', emoji: '🔧',
+    color: 'bg-cyan-600', ringColor: 'ring-cyan-400/60',
+  },
+  'github.com/Soul-Brews-Studio/ui-studio-oracle-studio': {
+    key: 'studio', label: 'studio', emoji: '🎨',
+    color: 'bg-fuchsia-600', ringColor: 'ring-fuchsia-400/60',
+  },
+  'github.com/Soul-Brews-Studio/oracle-studio': {
+    key: 'studio', label: 'studio', emoji: '🎨',
+    color: 'bg-fuchsia-600', ringColor: 'ring-fuchsia-400/60',
+  },
+  'github.com/kokarat/bank-bot': {
+    key: 'bank-bot', label: 'bank-bot', emoji: '🏦',
+    color: 'bg-emerald-600', ringColor: 'ring-emerald-400/60',
+  },
+  'github.com/kokarat/mobiz-payment-gateway': {
+    key: 'gateway', label: 'pg-writer', emoji: '💳',
+    color: 'bg-amber-600', ringColor: 'ring-amber-400/60',
+  },
+};
+
+const UNKNOWN_ROLE: Role = {
+  key: 'unknown', label: 'unknown', emoji: '❓',
+  color: 'bg-zinc-600', ringColor: 'ring-zinc-500/60',
+};
+
+function inferRole(s: ClaudeSession): Role {
+  if (!s.repo) return UNKNOWN_ROLE;
+  return ROLES_BY_REPO[s.repo] || UNKNOWN_ROLE;
+}
+
 function initials(s: ClaudeSession): string {
   const src = s.worktree?.name || s.repo?.split('/').pop() || s.sessionId;
   return src.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || 'AG';
 }
 
-function charColor(s: ClaudeSession): string {
-  // Deterministic hue from sessionId so same agent always has same color
-  let h = 0;
-  for (let i = 0; i < s.sessionId.length; i++) h = (h * 31 + s.sessionId.charCodeAt(i)) >>> 0;
-  const hue = h % 360;
-  return `hsl(${hue} 60% 55%)`;
-}
-
 function tooltipText(s: ClaudeSession): string {
+  const role = inferRole(s);
   const repo = s.repo?.split('/').slice(-2).join('/') || '(unknown)';
-  const wt = s.worktree ? ` · wt/${s.worktree.name}` : '';
+  const wt = s.worktree ? `\nwt/${s.worktree.name}` : '';
   const msg = s.lastAssistantMessage || s.lastUserMessage || '';
-  return `${repo}${wt}\n${s.status} · ${msg.slice(0, 80)}`;
+  return `${role.label} · ${repo}${wt}\n${s.status} · ${msg.slice(0, 80)}`;
 }
 
 function Character({ s, size = 'lg' }: { s: ClaudeSession; size?: 'lg' | 'md' }) {
-  const emoji = s.status === 'active' ? '🧑‍💻' : s.status === 'idle' ? '😴' : '👤';
-  const px = size === 'lg' ? 56 : 48;
+  const role = inferRole(s);
+  const px = size === 'lg' ? 88 : 68;
+  const emojiSize = size === 'lg' ? 46 : 36;
   return (
-    <div
-      className={`relative flex items-center justify-center rounded-full shadow-xl ring-2 ring-zinc-900 ${
-        s.status === 'active' ? 'animate-[bounce_2.4s_ease-in-out_infinite]' : ''
-      }`}
-      style={{
-        width: px,
-        height: px,
-        backgroundColor: charColor(s),
-        fontSize: size === 'lg' ? 30 : 26,
-      }}
-    >
-      <span>{emoji}</span>
-      <span
-        className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full ring-2 ring-zinc-900 ${
-          s.status === 'active'
-            ? 'bg-emerald-400 animate-pulse'
-            : s.status === 'idle'
-              ? 'bg-amber-400'
-              : 'bg-zinc-600'
+    <div className="flex flex-col items-center">
+      <div
+        className={`relative flex items-center justify-center rounded-full shadow-xl ring-4 ring-zinc-900 ${role.color} ${
+          s.status === 'active' ? 'animate-[bounce_2.4s_ease-in-out_infinite]' : ''
         }`}
-      />
+        style={{ width: px, height: px, fontSize: emojiSize }}
+      >
+        <span>{role.emoji}</span>
+        {/* Status dot */}
+        <span
+          className={`absolute -bottom-1 -right-1 h-4 w-4 rounded-full ring-2 ring-zinc-900 ${
+            s.status === 'active'
+              ? 'bg-emerald-400 animate-pulse'
+              : s.status === 'idle'
+                ? 'bg-amber-400'
+                : 'bg-zinc-600'
+          }`}
+        />
+        {/* Initials badge (worktree identity when 2+ agents share a role) */}
+        <span className="absolute -top-1 -left-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-zinc-950 px-1 font-mono text-[9px] font-bold text-zinc-200 ring-2 ring-zinc-900">
+          {initials(s)}
+        </span>
+      </div>
+      {/* Always-visible role label */}
+      <div
+        className={`mt-1.5 rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold ring-1 ${role.ringColor} text-zinc-200 bg-zinc-950/80`}
+      >
+        {role.label}
+      </div>
     </div>
   );
 }
@@ -61,37 +109,31 @@ function Desk({ session, onClick }: { session: ClaudeSession | undefined; onClic
       onClick={onClick}
       disabled={empty}
       title={session ? tooltipText(session) : 'Open desk — anyone can sit here'}
-      className={`group relative flex aspect-[5/4] flex-col items-center justify-end rounded-md border transition-all ${
+      className={`group relative flex min-h-[220px] flex-col items-center justify-end rounded-md border p-3 transition-all ${
         empty
           ? 'cursor-default border-dashed border-zinc-800/60 bg-zinc-900/20'
           : 'cursor-pointer border-zinc-700 bg-gradient-to-b from-amber-950/20 to-amber-900/30 hover:border-amber-600/60 hover:shadow-xl'
       }`}
     >
       {/* Monitor on the desk */}
-      <div className="absolute left-1/2 top-2 h-7 w-12 -translate-x-1/2 rounded border border-zinc-700 bg-zinc-950/80">
+      <div className="absolute left-1/2 top-3 h-10 w-16 -translate-x-1/2 rounded border border-zinc-700 bg-zinc-950/80 shadow">
         <div
-          className={`m-0.5 h-[calc(100%-4px)] w-[calc(100%-4px)] rounded-sm ${
+          className={`m-1 h-[calc(100%-8px)] w-[calc(100%-8px)] rounded-sm ${
             session?.status === 'active' ? 'bg-emerald-900/70' : 'bg-zinc-900'
           }`}
         />
-        <div className="absolute left-1/2 top-full h-1.5 w-2 -translate-x-1/2 bg-zinc-700" />
+        <div className="absolute left-1/2 top-full h-2 w-3 -translate-x-1/2 bg-zinc-700" />
+        <div className="absolute left-1/2 top-[calc(100%+8px)] h-0.5 w-8 -translate-x-1/2 bg-zinc-700" />
       </div>
 
       {/* Character seat */}
-      <div className="relative mb-2 mt-12 flex items-center justify-center">
+      <div className="relative mb-1 mt-16 flex items-center justify-center">
         {session ? (
           <Character s={session} size="lg" />
         ) : (
-          <span className="text-3xl opacity-15">🪑</span>
+          <span className="text-5xl opacity-15">🪑</span>
         )}
       </div>
-
-      {/* Name label (hover) */}
-      {session && (
-        <div className="pointer-events-none absolute -bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-zinc-950/95 px-2 py-0.5 text-[10px] font-mono text-zinc-300 opacity-0 shadow-lg ring-1 ring-zinc-800 transition-opacity group-hover:opacity-100">
-          {initials(session)} · {session.worktree?.name || 'main'}
-        </div>
-      )}
     </button>
   );
 }
@@ -104,9 +146,6 @@ function BreakCharacter({ s, onClick }: { s: ClaudeSession; onClick: () => void 
       className="group flex flex-col items-center transition-transform hover:-translate-y-1"
     >
       <Character s={s} size="md" />
-      <span className="mt-1 font-mono text-[10px] text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100">
-        {initials(s)}
-      </span>
     </button>
   );
 }
