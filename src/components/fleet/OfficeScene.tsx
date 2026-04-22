@@ -25,22 +25,24 @@ function tooltipText(s: ClaudeSession): string {
   return `${repo}${wt}\n${s.status} · ${msg.slice(0, 80)}`;
 }
 
-function Character({ s, working }: { s: ClaudeSession; working: boolean }) {
-  const emoji = s.status === 'active' ? '🧑‍💻' : s.status === 'idle' ? '😴' : '🪑';
+function Character({ s, size = 'lg' }: { s: ClaudeSession; size?: 'lg' | 'md' }) {
+  const emoji = s.status === 'active' ? '🧑‍💻' : s.status === 'idle' ? '😴' : '👤';
+  const px = size === 'lg' ? 56 : 48;
   return (
     <div
-      className={`relative flex items-center justify-center rounded-full text-lg shadow-lg ring-2 ring-zinc-900 ${
-        s.status === 'active' ? 'animate-[bounce_2s_ease-in-out_infinite]' : ''
+      className={`relative flex items-center justify-center rounded-full shadow-xl ring-2 ring-zinc-900 ${
+        s.status === 'active' ? 'animate-[bounce_2.4s_ease-in-out_infinite]' : ''
       }`}
       style={{
-        width: working ? 34 : 28,
-        height: working ? 34 : 28,
+        width: px,
+        height: px,
         backgroundColor: charColor(s),
+        fontSize: size === 'lg' ? 30 : 26,
       }}
     >
       <span>{emoji}</span>
       <span
-        className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full ring-1 ring-zinc-900 ${
+        className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full ring-2 ring-zinc-900 ${
           s.status === 'active'
             ? 'bg-emerald-400 animate-pulse'
             : s.status === 'idle'
@@ -58,46 +60,51 @@ function Desk({ session, onClick }: { session: ClaudeSession | undefined; onClic
     <button
       onClick={onClick}
       disabled={empty}
-      title={session ? tooltipText(session) : 'Empty desk'}
-      className={`group relative flex aspect-[4/3] flex-col items-center justify-end rounded-md border transition-all ${
+      title={session ? tooltipText(session) : 'Open desk — anyone can sit here'}
+      className={`group relative flex aspect-[5/4] flex-col items-center justify-end rounded-md border transition-all ${
         empty
-          ? 'cursor-default border-zinc-800/50 bg-zinc-900/30'
-          : 'cursor-pointer border-zinc-700 bg-gradient-to-b from-amber-950/20 to-amber-900/30 hover:border-amber-600/50 hover:shadow-lg'
+          ? 'cursor-default border-dashed border-zinc-800/60 bg-zinc-900/20'
+          : 'cursor-pointer border-zinc-700 bg-gradient-to-b from-amber-950/20 to-amber-900/30 hover:border-amber-600/60 hover:shadow-xl'
       }`}
     >
       {/* Monitor on the desk */}
-      <div className="absolute left-1/2 top-1 h-4 w-6 -translate-x-1/2 rounded-sm border border-zinc-700 bg-zinc-950/80 sm:h-5 sm:w-8">
-        <div className={`h-full w-full rounded-sm ${session?.status === 'active' ? 'bg-emerald-900/60' : 'bg-zinc-900'}`} />
+      <div className="absolute left-1/2 top-2 h-7 w-12 -translate-x-1/2 rounded border border-zinc-700 bg-zinc-950/80">
+        <div
+          className={`m-0.5 h-[calc(100%-4px)] w-[calc(100%-4px)] rounded-sm ${
+            session?.status === 'active' ? 'bg-emerald-900/70' : 'bg-zinc-900'
+          }`}
+        />
+        <div className="absolute left-1/2 top-full h-1.5 w-2 -translate-x-1/2 bg-zinc-700" />
       </div>
 
-      {/* Chair + character */}
-      <div className="relative mb-1 flex items-center justify-center">
+      {/* Character seat */}
+      <div className="relative mb-2 mt-12 flex items-center justify-center">
         {session ? (
-          <Character s={session} working />
+          <Character s={session} size="lg" />
         ) : (
-          <span className="text-xl opacity-20">🪑</span>
+          <span className="text-3xl opacity-15">🪑</span>
         )}
       </div>
 
-      {/* Label */}
+      {/* Name label (hover) */}
       {session && (
-        <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 rounded bg-zinc-950/90 px-1.5 py-0.5 text-[9px] font-mono text-zinc-300 opacity-0 transition-opacity group-hover:opacity-100 shadow">
-          {initials(session)}
+        <div className="pointer-events-none absolute -bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-zinc-950/95 px-2 py-0.5 text-[10px] font-mono text-zinc-300 opacity-0 shadow-lg ring-1 ring-zinc-800 transition-opacity group-hover:opacity-100">
+          {initials(session)} · {session.worktree?.name || 'main'}
         </div>
       )}
     </button>
   );
 }
 
-function LoungeCharacter({ s, onClick }: { s: ClaudeSession; onClick: () => void }) {
+function BreakCharacter({ s, onClick }: { s: ClaudeSession; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
       title={tooltipText(s)}
-      className="group flex flex-col items-center transition-transform hover:-translate-y-0.5"
+      className="group flex flex-col items-center transition-transform hover:-translate-y-1"
     >
-      <Character s={s} working={false} />
-      <span className="mt-1 font-mono text-[9px] text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100">
+      <Character s={s} size="md" />
+      <span className="mt-1 font-mono text-[10px] text-zinc-500 opacity-0 transition-opacity group-hover:opacity-100">
         {initials(s)}
       </span>
     </button>
@@ -119,13 +126,20 @@ interface Props {
 
 export function OfficeScene({ sessions }: Props) {
   const navigate = useNavigate();
-  const live = sessions.filter(s => s.status !== 'ended');
-  const ordered = [...live].sort((a, b) => {
-    if (a.status !== b.status) return a.status === 'active' ? -1 : 1;
-    return a.lastActivityAt < b.lastActivityAt ? 1 : -1;
-  });
-  const atDesk = ordered.slice(0, MAX_DESKS);
-  const atLounge = ordered.slice(MAX_DESKS);
+
+  // Shared-desk model: only actively working agents occupy a desk.
+  // Everyone not currently working hangs out in the break room (idle + ended).
+  // Sort active by most-recent so the newest worker fills the first desk.
+  const activeSorted = sessions
+    .filter(s => s.status === 'active')
+    .sort((a, b) => (a.lastActivityAt < b.lastActivityAt ? 1 : -1));
+  const atDesk = activeSorted.slice(0, MAX_DESKS);
+  const deskOverflow = activeSorted.slice(MAX_DESKS);
+
+  const inBreak = sessions
+    .filter(s => s.status === 'idle' || s.status === 'ended')
+    .sort((a, b) => (a.lastActivityAt < b.lastActivityAt ? 1 : -1));
+  const breakPeople = [...deskOverflow, ...inBreak];
 
   return (
     <div className="relative flex-1 overflow-hidden bg-gradient-to-br from-zinc-900 via-zinc-950 to-zinc-900 p-6">
@@ -137,12 +151,12 @@ export function OfficeScene({ sessions }: Props) {
           backgroundSize: '32px 32px',
         }}
       >
-        {/* Top strip — door + plants + heading */}
+        {/* Top strip — heading + door */}
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-lg font-semibold text-zinc-100">The Office</h1>
             <p className="text-[11px] text-zinc-500">
-              {atDesk.length} at work · {atLounge.length} on break · {sessions.filter(s => s.status === 'ended').length} gone home
+              {atDesk.length} working · {breakPeople.length} on break · {sessions.length} total
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -151,9 +165,10 @@ export function OfficeScene({ sessions }: Props) {
           </div>
         </div>
 
-        {/* Work area — desk grid */}
+        {/* Work area — shared desk pool */}
+        <div className="mb-4 text-[10px] uppercase tracking-wider text-zinc-500">Desks · shared</div>
         <div
-          className="grid gap-x-4 gap-y-8 pb-2"
+          className="grid gap-x-5 gap-y-12 pb-4"
           style={{ gridTemplateColumns: `repeat(${DESKS_PER_ROW}, minmax(0, 1fr))` }}
         >
           {Array.from({ length: MAX_DESKS }).map((_, i) => (
@@ -165,24 +180,26 @@ export function OfficeScene({ sessions }: Props) {
           ))}
         </div>
 
-        {/* Lounge area */}
-        <div className="mt-auto border-t border-dashed border-zinc-800 pt-4">
+        {/* Break room */}
+        <div className="mt-auto border-t border-dashed border-zinc-800 pt-5">
           <div className="mb-3 flex items-baseline justify-between">
             <div className="text-[10px] uppercase tracking-wider text-zinc-500">Break room</div>
-            {atLounge.length > 0 && (
-              <div className="font-mono text-[10px] text-zinc-600">{atLounge.length} on couch</div>
+            {breakPeople.length > 0 && (
+              <div className="font-mono text-[10px] text-zinc-600">{breakPeople.length} hanging out</div>
             )}
           </div>
-          <div className="flex flex-wrap items-end gap-4">
-            <Decor emoji="🛋️" label="couch" size="text-3xl" />
-            <Decor emoji="☕" label="coffee" />
-            <Decor emoji="🪴" />
-            <div className="flex flex-wrap gap-2 pl-2">
-              {atLounge.length === 0 ? (
-                <span className="self-center text-[10px] text-zinc-600 italic">empty</span>
+          <div className="flex items-end gap-6">
+            <div className="flex items-end gap-3 shrink-0">
+              <Decor emoji="🛋️" label="couch" size="text-4xl" />
+              <Decor emoji="☕" label="coffee" size="text-2xl" />
+              <Decor emoji="🪴" size="text-2xl" />
+            </div>
+            <div className="flex flex-1 flex-wrap items-end gap-x-4 gap-y-3 pl-2">
+              {breakPeople.length === 0 ? (
+                <span className="self-center text-[11px] italic text-zinc-600">empty</span>
               ) : (
-                atLounge.map(s => (
-                  <LoungeCharacter
+                breakPeople.map(s => (
+                  <BreakCharacter
                     key={s.sessionId}
                     s={s}
                     onClick={() => navigate(`/fleet/${s.sessionId}`)}
