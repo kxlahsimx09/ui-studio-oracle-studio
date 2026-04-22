@@ -3,7 +3,7 @@ import { listClaudeSessions, type ClaudeSession } from '../api/maw';
 import { OfficeScene } from '../components/fleet/OfficeScene';
 import { AgentSidebar } from '../components/fleet/AgentSidebar';
 
-const POLL_MS = 5000;
+const POLL_MS = 2000;
 
 export function Fleet() {
   const [sessions, setSessions] = useState<ClaudeSession[]>([]);

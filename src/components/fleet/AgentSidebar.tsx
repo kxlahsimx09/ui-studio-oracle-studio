@@ -93,7 +93,7 @@ export function AgentSidebar({ sessions, generatedAt, error, loading }: Props) {
         <h2 className="text-sm font-semibold text-zinc-200">Roster</h2>
         <p className="mt-0.5 text-[10px] text-zinc-500">
           {sessions.length} session{sessions.length === 1 ? '' : 's'}
-          {generatedAt && ` · refreshed ${ago(generatedAt)} ago`}
+          {generatedAt && ` · every 2s`}
         </p>
       </div>
       <div className="flex-1 overflow-y-auto p-2">

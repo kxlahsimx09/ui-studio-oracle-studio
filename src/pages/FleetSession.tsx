@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { getClaudeTranscript, type TranscriptEntry, type TranscriptResponse } from '../api/maw';
 import { Spinner } from '../components/ui/Spinner';
 
-const POLL_MS = 4000;
+const POLL_MS = 2000;
 
 function agoLabel(iso: string): string {
   if (!iso) return '—';
