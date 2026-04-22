@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import type { ClaudeSession } from '../../api/maw';
 
 const DESKS_PER_ROW = 4;
-const DESK_ROWS = 3;
+const DESK_ROWS = 1;
 const MAX_DESKS = DESKS_PER_ROW * DESK_ROWS;
 
 function initials(s: ClaudeSession): string {
@@ -144,7 +144,7 @@ export function OfficeScene({ sessions }: Props) {
   return (
     <div className="relative flex-1 overflow-hidden bg-gradient-to-br from-zinc-900 via-zinc-950 to-zinc-900 p-6">
       <div
-        className="relative mx-auto flex h-full max-w-5xl flex-col rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 shadow-2xl"
+        className="relative mx-auto flex h-full max-w-5xl flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 shadow-2xl"
         style={{
           backgroundImage:
             'linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)',
@@ -165,10 +165,12 @@ export function OfficeScene({ sessions }: Props) {
           </div>
         </div>
 
-        {/* Work area — shared desk pool */}
-        <div className="mb-4 text-[10px] uppercase tracking-wider text-zinc-500">Desks · shared</div>
+        {/* Work area — shared desk pool (single row, 4 shared desks) */}
+        <div className="mb-4 shrink-0 text-[10px] uppercase tracking-wider text-zinc-500">
+          Desks · shared ({atDesk.length}/{MAX_DESKS})
+        </div>
         <div
-          className="grid gap-x-5 gap-y-12 pb-4"
+          className="grid shrink-0 gap-x-5 gap-y-10 pb-6"
           style={{ gridTemplateColumns: `repeat(${DESKS_PER_ROW}, minmax(0, 1fr))` }}
         >
           {Array.from({ length: MAX_DESKS }).map((_, i) => (
@@ -180,21 +182,21 @@ export function OfficeScene({ sessions }: Props) {
           ))}
         </div>
 
-        {/* Break room */}
-        <div className="mt-auto border-t border-dashed border-zinc-800 pt-5">
-          <div className="mb-3 flex items-baseline justify-between">
+        {/* Break room — fills remaining space, characters scroll if crowded */}
+        <div className="mt-4 flex min-h-0 flex-1 flex-col border-t border-dashed border-zinc-800 pt-5">
+          <div className="mb-3 flex shrink-0 items-baseline justify-between">
             <div className="text-[10px] uppercase tracking-wider text-zinc-500">Break room</div>
             {breakPeople.length > 0 && (
               <div className="font-mono text-[10px] text-zinc-600">{breakPeople.length} hanging out</div>
             )}
           </div>
-          <div className="flex items-end gap-6">
-            <div className="flex items-end gap-3 shrink-0">
+          <div className="flex min-h-0 flex-1 items-start gap-6">
+            <div className="flex shrink-0 items-end gap-3">
               <Decor emoji="🛋️" label="couch" size="text-4xl" />
               <Decor emoji="☕" label="coffee" size="text-2xl" />
               <Decor emoji="🪴" size="text-2xl" />
             </div>
-            <div className="flex flex-1 flex-wrap items-end gap-x-4 gap-y-3 pl-2">
+            <div className="flex flex-1 flex-wrap content-start items-start gap-x-5 gap-y-4 overflow-y-auto pl-2 pt-1 pr-1">
               {breakPeople.length === 0 ? (
                 <span className="self-center text-[11px] italic text-zinc-600">empty</span>
               ) : (
