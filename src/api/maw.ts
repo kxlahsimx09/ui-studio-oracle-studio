@@ -20,6 +20,7 @@ export interface ClaudeSession {
   lastActivityAt: string;
   lastUserMessage: string | null;
   lastAssistantMessage: string | null;
+  role?: string | null;  // From maw-js role extraction — optional until server ships the field.
   sizeBytes: number;
   jsonlPath: string;
 }

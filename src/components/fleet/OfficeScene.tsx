@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ClaudeSession, FleetJob } from '../../api/maw';
+import { ROLES_BY_NAME, ROLES_BY_REPO, UNKNOWN_ROLE, type Role } from '../../config/fleet';
 
 const CAT_GIF = '/assets/fleet/happy_cat.gif';
 const CAT_STILL = '/assets/fleet/happy_cat_still.png';
@@ -11,54 +12,10 @@ const DESKS_PER_ROW = 4;
 const DESK_ROWS = 1;
 const MAX_DESKS = DESKS_PER_ROW * DESK_ROWS;
 
-interface Role {
-  key: string;
-  label: string;
-  emoji: string;
-  color: string;          // Tailwind bg class for avatar
-  ringColor: string;      // Tailwind ring class
-}
-
-// Per-repo role inference. Edit this to add new repos / roles.
-const ROLES_BY_REPO: Record<string, Role> = {
-  'github.com/Soul-Brews-Studio/arra-oracle-v3': {
-    key: 'brew-ops', label: 'brew-ops', emoji: '🔧',
-    color: 'bg-cyan-600', ringColor: 'ring-cyan-400/60',
-  },
-  'github.com/Soul-Brews-Studio/maw-js': {
-    key: 'brew-ops', label: 'brew-ops', emoji: '🔧',
-    color: 'bg-cyan-600', ringColor: 'ring-cyan-400/60',
-  },
-  'github.com/Soul-Brews-Studio/ui-studio-oracle-studio': {
-    key: 'studio', label: 'studio', emoji: '🎨',
-    color: 'bg-fuchsia-600', ringColor: 'ring-fuchsia-400/60',
-  },
-  'github.com/Soul-Brews-Studio/oracle-studio': {
-    key: 'studio', label: 'studio', emoji: '🎨',
-    color: 'bg-fuchsia-600', ringColor: 'ring-fuchsia-400/60',
-  },
-  'github.com/kokarat/bank-bot': {
-    key: 'bank-bot', label: 'bank-bot', emoji: '🏦',
-    color: 'bg-emerald-600', ringColor: 'ring-emerald-400/60',
-  },
-  'github.com/kokarat/mobiz-payment-gateway': {
-    key: 'gateway', label: 'pg-writer', emoji: '💳',
-    color: 'bg-amber-600', ringColor: 'ring-amber-400/60',
-  },
-  'github.com/kxlahsimx09/mb-next-payment-gateway': {
-    key: 'architect', label: 'architect', emoji: '📐',
-    color: 'bg-indigo-600', ringColor: 'ring-indigo-400/60',
-  },
-};
-
-const UNKNOWN_ROLE: Role = {
-  key: 'unknown', label: 'unknown', emoji: '❓',
-  color: 'bg-zinc-600', ringColor: 'ring-zinc-500/60',
-};
-
 export function inferRole(s: ClaudeSession): Role {
-  if (!s.repo) return UNKNOWN_ROLE;
-  return ROLES_BY_REPO[s.repo] || UNKNOWN_ROLE;
+  if (s.role && ROLES_BY_NAME[s.role]) return ROLES_BY_NAME[s.role];
+  if (s.repo && ROLES_BY_REPO[s.repo]) return ROLES_BY_REPO[s.repo];
+  return UNKNOWN_ROLE;
 }
 
 function initials(s: ClaudeSession): string {
