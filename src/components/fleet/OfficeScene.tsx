@@ -45,6 +45,10 @@ const ROLES_BY_REPO: Record<string, Role> = {
     key: 'gateway', label: 'pg-writer', emoji: '💳',
     color: 'bg-amber-600', ringColor: 'ring-amber-400/60',
   },
+  'github.com/kxlahsimx09/mb-next-payment-gateway': {
+    key: 'architect', label: 'architect', emoji: '📐',
+    color: 'bg-indigo-600', ringColor: 'ring-indigo-400/60',
+  },
 };
 
 const UNKNOWN_ROLE: Role = {
