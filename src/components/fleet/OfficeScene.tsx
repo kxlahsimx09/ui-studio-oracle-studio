@@ -210,7 +210,7 @@ function Machine({ job, muted, onToggleMute }: { job: FleetJob | undefined; mute
   return (
     <div className="flex flex-col items-center" title={tooltip}>
       <div
-        className={`relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-lg border-2 bg-zinc-900 transition-all ${
+        className={`relative overflow-hidden rounded-lg border-2 bg-zinc-900 transition-all ${
           running
             ? 'border-emerald-500/70 shadow-[0_0_24px_rgba(16,185,129,0.4)]'
             : 'border-zinc-700'
@@ -219,7 +219,9 @@ function Machine({ job, muted, onToggleMute }: { job: FleetJob | undefined; mute
         <img
           src={running ? CAT_GIF : CAT_STILL}
           alt={running ? 'running' : 'idle'}
-          className={`h-full w-full object-cover transition-all ${running ? '' : 'grayscale-[40%] opacity-80'}`}
+          width={104}
+          height={186}
+          className={`block h-32 w-auto transition-all ${running ? '' : 'grayscale-[40%] opacity-80'}`}
           draggable={false}
         />
         <span
