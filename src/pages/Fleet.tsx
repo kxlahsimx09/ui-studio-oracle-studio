@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { listClaudeSessions, type ClaudeSession, type FleetJob } from '../api/maw';
-import { OfficeScene } from '../components/fleet/OfficeScene';
+import { OfficeScene, inferRole } from '../components/fleet/OfficeScene';
 import { AgentSidebar } from '../components/fleet/AgentSidebar';
 
 const POLL_MS = 2000;
@@ -37,11 +37,16 @@ export function Fleet() {
     };
   }, []);
 
+  // Hide sessions whose repo can't be resolved — maw-js only resolves repo for
+  // live PIDs, so ended/deleted sessions surface as role=unknown. Treat them as
+  // gone for display purposes (the raw data is still in the API response).
+  const visible = useMemo(() => sessions.filter(s => inferRole(s).key !== 'unknown'), [sessions]);
+
   return (
     <div className="flex h-[calc(100vh-64px)] w-full text-zinc-200">
-      <OfficeScene sessions={sessions} jobs={jobs} />
+      <OfficeScene sessions={visible} jobs={jobs} />
       <AgentSidebar
-        sessions={sessions}
+        sessions={visible}
         generatedAt={generatedAt}
         error={error}
         loading={loading}

@@ -52,7 +52,7 @@ const UNKNOWN_ROLE: Role = {
   color: 'bg-zinc-600', ringColor: 'ring-zinc-500/60',
 };
 
-function inferRole(s: ClaudeSession): Role {
+export function inferRole(s: ClaudeSession): Role {
   if (!s.repo) return UNKNOWN_ROLE;
   return ROLES_BY_REPO[s.repo] || UNKNOWN_ROLE;
 }
