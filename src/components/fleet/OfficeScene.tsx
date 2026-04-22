@@ -1,5 +1,11 @@
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ClaudeSession, FleetJob } from '../../api/maw';
+
+const CAT_GIF = '/assets/fleet/happy_cat.gif';
+const CAT_STILL = '/assets/fleet/happy_cat_still.png';
+const CAT_AUDIO = '/assets/fleet/happy_cat.mp3';
+const MUTE_STORAGE_KEY = 'fleet.machine.mute';
 
 const DESKS_PER_ROW = 4;
 const DESK_ROWS = 1;
@@ -168,47 +174,78 @@ function formatRuntime(iso: string): string {
   return `${h}h ${m}m`;
 }
 
-function Machine({ job }: { job: FleetJob | undefined }) {
+function useMutePreference(): [boolean, (m: boolean) => void] {
+  const [muted, setMuted] = useState<boolean>(() => {
+    try { return localStorage.getItem(MUTE_STORAGE_KEY) !== '0'; } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(MUTE_STORAGE_KEY, muted ? '1' : '0'); } catch { /* ignore */ }
+  }, [muted]);
+  return [muted, setMuted];
+}
+
+/** Shared across all Machine instances on the page so one click controls all. */
+function MachineAudio({ playing, muted }: { playing: boolean; muted: boolean }) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    a.muted = muted;
+    if (playing) {
+      a.play().catch(() => { /* autoplay blocked — will play after first user gesture */ });
+    } else {
+      a.pause();
+      a.currentTime = 0;
+    }
+  }, [playing, muted]);
+  return <audio ref={audioRef} src={CAT_AUDIO} loop preload="none" />;
+}
+
+function Machine({ job, muted, onToggleMute }: { job: FleetJob | undefined; muted: boolean; onToggleMute: () => void }) {
   const running = !!job;
   const kind = job?.kind || 'regression';
   const tooltip = job
     ? `${kind} · pid ${job.pid} · ${formatRuntime(job.startedAt)}${job.singleTest ? `\n${job.singleTest}` : ''}${job.runId ? `\nrun ${job.runId}` : ''}`
-    : 'regression machine · idle';
+    : 'regression — idle (cat naps)';
   return (
     <div className="flex flex-col items-center" title={tooltip}>
       <div
-        className={`relative flex h-14 w-14 items-center justify-center rounded-md border-2 bg-zinc-900 transition-all ${
+        className={`relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-lg border-2 bg-zinc-900 transition-all ${
           running
-            ? 'border-emerald-500/70 shadow-[0_0_20px_rgba(16,185,129,0.35)]'
-            : 'border-zinc-700 opacity-50'
+            ? 'border-emerald-500/70 shadow-[0_0_24px_rgba(16,185,129,0.4)]'
+            : 'border-zinc-700'
         }`}
       >
-        <span className="text-2xl">🖥️</span>
-        {running && (
-          <>
-            {/* Three rack LEDs blinking in sequence */}
-            <span className="absolute left-1.5 bottom-1.5 flex gap-0.5">
-              <span className="h-1 w-1 rounded-full bg-emerald-400 animate-pulse" style={{ animationDelay: '0ms' }} />
-              <span className="h-1 w-1 rounded-full bg-emerald-400 animate-pulse" style={{ animationDelay: '200ms' }} />
-              <span className="h-1 w-1 rounded-full bg-emerald-400 animate-pulse" style={{ animationDelay: '400ms' }} />
-            </span>
-          </>
-        )}
+        <img
+          src={running ? CAT_GIF : CAT_STILL}
+          alt={running ? 'running' : 'idle'}
+          className={`h-full w-full object-cover transition-all ${running ? '' : 'grayscale-[40%] opacity-80'}`}
+          draggable={false}
+        />
         <span
-          className={`absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full ring-2 ring-zinc-950 ${
+          className={`absolute -bottom-1 -right-1 h-4 w-4 rounded-full ring-2 ring-zinc-950 ${
             running ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-600'
           }`}
         />
       </div>
-      <span
-        className={`mt-1.5 rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold ring-1 ${
-          running
-            ? 'bg-emerald-950/60 text-emerald-200 ring-emerald-500/60'
-            : 'bg-zinc-950/60 text-zinc-500 ring-zinc-700'
-        }`}
-      >
-        {kind}
-      </span>
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <span
+          className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold ring-1 ${
+            running
+              ? 'bg-emerald-950/60 text-emerald-200 ring-emerald-500/60'
+              : 'bg-zinc-950/60 text-zinc-500 ring-zinc-700'
+          }`}
+        >
+          {kind}
+        </span>
+        <button
+          onClick={onToggleMute}
+          title={muted ? 'unmute cat' : 'mute cat'}
+          className="rounded border border-zinc-700 bg-zinc-900 px-1 py-0.5 text-[11px] leading-none text-zinc-300 hover:bg-zinc-800 hover:border-zinc-600"
+        >
+          {muted ? '🔇' : '🔊'}
+        </button>
+      </div>
       {running && (
         <span className="mt-0.5 font-mono text-[9px] text-emerald-400/70">
           {formatRuntime(job!.startedAt)}
@@ -225,6 +262,7 @@ interface Props {
 
 export function OfficeScene({ sessions, jobs = [] }: Props) {
   const navigate = useNavigate();
+  const [muted, setMuted] = useMutePreference();
 
   // Shared-desk model: only actively working agents occupy a desk.
   // Everyone not currently working hangs out in the break room (idle + ended).
@@ -260,10 +298,11 @@ export function OfficeScene({ sessions, jobs = [] }: Props) {
           </div>
           <div className="flex items-end gap-5">
             {jobs.length > 0 ? (
-              jobs.map(j => <Machine key={j.pid} job={j} />)
+              jobs.map(j => <Machine key={j.pid} job={j} muted={muted} onToggleMute={() => setMuted(!muted)} />)
             ) : (
-              <Machine job={undefined} />
+              <Machine job={undefined} muted={muted} onToggleMute={() => setMuted(!muted)} />
             )}
+            <MachineAudio playing={jobs.length > 0} muted={muted} />
             <Decor emoji="🪴" />
             <Decor emoji="🚪" label="entrance" />
           </div>
