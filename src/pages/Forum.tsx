@@ -80,7 +80,13 @@ export function Forum() {
   }
 
   async function loadThreads() {
-    const data = await (await fetch(`${API_BASE}/threads`)).json();
+    // Backend's default limit is 20, sorted newest-first. The "Open" tab
+    // filters !closed client-side, so a 20-thread window with mostly closed
+    // threads (recent ADR resolutions, etc.) hides older still-pending
+    // threads from view (observed 2026-04-28: 8 pending in DB, only 3 in
+    // top 20 → studio reported 3 while bot reported 8).
+    // Bump to 100 to cover practical history; pagination is a follow-up.
+    const data = await (await fetch(`${API_BASE}/threads?limit=100`)).json();
     setThreads(data.threads);
   }
 
