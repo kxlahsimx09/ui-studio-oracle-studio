@@ -7,7 +7,7 @@
 //
 // See ./host.ts for the full API (setStoredHost, clearStoredHost, getRecentHosts, wsUrl…).
 import { apiUrl } from './host';
-import { cached } from '../lib/cache';
+import { cached, cacheBus } from '../lib/cache';
 export { apiUrl } from './host';
 
 /** Resolved base for Oracle API (e.g. `/api` or `https://mba.wg:47778/api`). */
@@ -218,10 +218,14 @@ export async function getMap(): Promise<{ documents: MapDocument[]; total: numbe
 export async function getMap3d(model?: string): Promise<{ documents: MapDocument[]; total: number; pca_info?: any }> {
   const params = model ? `?model=${encodeURIComponent(model)}` : '';
   const key = `map3d:${model ?? 'default'}`;
-  return cached(key, ONE_DAY, async () => {
+  const result = await cached(key, ONE_DAY, async () => {
     const res = await fetch(`${API_BASE}/map3d${params}`);
     return res.json();
   }, { tag: 'map3d', store: 'idb' });
+  // Empty result = backend not ready yet (collection still warming, indexer running, etc).
+  // Drop the cache entry so the next call refetches instead of serving 0 docs for 24h.
+  if (!result?.total) cacheBus.invalidate('map3d');
+  return result;
 }
 
 // Dashboard types
