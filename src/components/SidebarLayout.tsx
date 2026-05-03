@@ -32,7 +32,7 @@ export const TOOLS_NAV: NavItem[] = [
   { path: '/evolution', label: 'Evolution' },
   { path: '/traces', label: 'Traces' },
   { path: '/superseded', label: 'Superseded' },
-  { path: '/handoff', label: 'Handoff' },
+  { path: '/handoff', label: 'Inbox' },
   { path: '/schedule', label: 'Schedule' },
 ];
 
