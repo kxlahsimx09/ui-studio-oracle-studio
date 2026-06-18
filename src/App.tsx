@@ -23,6 +23,7 @@ import { Schedule } from './pages/Schedule';
 import { Pulse } from './pages/Pulse';
 import { Plugins } from './pages/Plugins';
 import { Sessions } from './pages/Sessions';
+import { Town } from './pages/Town';
 import { Canvas } from './pages/Canvas';
 import { Planets } from './pages/Planets';
 import { MenuEditor } from './pages/MenuEditor';
@@ -92,6 +93,7 @@ function AppContent() {
         <Route path="/sessions/:id" element={<RequireAuth><Sessions /></RequireAuth>} />
         <Route path="/fleet" element={<RequireAuth><Fleet /></RequireAuth>} />
         <Route path="/fleet/:id" element={<RequireAuth><FleetSession /></RequireAuth>} />
+        <Route path="/town" element={<RequireAuth><Town /></RequireAuth>} />
         <Route path="/canvas" element={<RequireAuth><Canvas /></RequireAuth>} />
         <Route path="/planets" element={<RequireAuth><Planets /></RequireAuth>} />
         <Route path="/plugins" element={<RequireAuth><Plugins /></RequireAuth>} />
