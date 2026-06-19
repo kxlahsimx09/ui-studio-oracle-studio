@@ -2,9 +2,11 @@
 // Roles → costumes, working/asleep/offline → animation; an orchestrator and the
 // workers it dispatched (its maw campaign) sit together in one cluster. Map view =
 // pixel sprites on a grass map; List view = readable cards. Mirror, never drives.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useFleet } from '../lib/fleet';
 import type { FleetAgent } from '../lib/fleet';
+import { useLock } from '../lib/lock';
+import type { LockState } from '../lib/lock';
 import { groupTown } from '../lib/town-group';
 import { District } from '../components/town/District';
 import { PixelTown } from '../components/town/PixelTown';
@@ -13,6 +15,7 @@ import { NewAgent } from '../components/town/NewAgent';
 import { Notifications } from '../components/town/Notifications';
 import { StagingBand } from '../components/town/StagingBand';
 import { UsagePanel } from '../components/town/UsagePanel';
+import { LockPanel } from '../components/town/LockPanel';
 import './Town.css';
 
 type TownView = 'map' | 'list';
@@ -39,6 +42,10 @@ export function Town() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
+  const [showLock, setShowLock] = useState(false);
+  const polledLock = useLock(4000);
+  const [lock, setLock] = useState<LockState | null>(null);
+  useEffect(() => { if (polledLock) setLock(polledLock); }, [polledLock]);
   const selected = selectedId ? state.agents.find((a) => a.id === selectedId) ?? null : null;
   const openAgent = (a: FleetAgent) => setSelectedId(a.id);
 
@@ -80,6 +87,16 @@ export function Town() {
             style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }}
             title="account usage / quota"
           >📊 usage</button>
+          <button
+            onClick={() => setShowLock(true)}
+            className="px-2.5 py-1 rounded-full text-[11px]"
+            style={lock?.disabled
+              ? { background: '#ffffff10', color: '#94a3b8', border: '1px solid #ffffff22' }
+              : lock?.locked
+                ? { background: '#f8717122', color: '#fca5a5', border: '1px solid #f8717155' }
+                : { background: '#4ade8022', color: '#4ade80', border: '1px solid #4ade8055' }}
+            title="staging env lock"
+          >{lock?.disabled ? '🔓 lock off' : lock?.locked ? `🔒 ${lock.holder?.agent || 'locked'}` : '🔓 staging free'}</button>
           <Notifications teams={teamGroups} agents={agentList} />
           <span className="text-[10px] text-white/35 font-mono">{state.host || '…'} · {ago(lastOk)}</span>
           <div className="inline-flex rounded-full border border-white/10 overflow-hidden text-[11px]">
@@ -103,7 +120,7 @@ export function Town() {
         </div>
       )}
 
-      {view === 'map' && <PixelTown state={state} onSelect={openAgent} />}
+      {view === 'map' && <PixelTown state={state} onSelect={openAgent} lock={lock} onLockClick={() => setShowLock(true)} />}
 
       {view === 'list' && (
         <div className="flex flex-col gap-3">
@@ -114,6 +131,7 @@ export function Town() {
       {selected && <AgentChat key={selected.id} agent={selected} onClose={() => setSelectedId(null)} />}
       {showNew && <NewAgent onClose={() => setShowNew(false)} />}
       {showUsage && <UsagePanel onClose={() => setShowUsage(false)} />}
+      {showLock && <LockPanel lock={lock} agents={state.agents} onChange={setLock} onClose={() => setShowLock(false)} />}
 
       {loading && !state.agents.length && (
         <p className="text-center text-white/40 py-12">scanning the fleet…</p>
