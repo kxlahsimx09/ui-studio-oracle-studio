@@ -3,7 +3,8 @@
 Pixel-art assets used by the `/town` view, from two sources:
 
 ## Ground + nature decorations — Cainos "Pixel Art Top Down - Basic"
-`grass.png`, `tree.png`, `bush.png`, `rock.png`, `tuft.png` are from the
+`grass.png`, `tree.png`, `bush.png`, `rock.png`, `tuft.png`, `lock-chest.png`
+(the staging-env lock item) are from the
 **Cainos "Pixel Art Top Down - Basic"** pack
 (<https://cainos.itch.io/pixel-art-top-down-basic>), 32×32, one cohesive set.
 
