@@ -313,11 +313,13 @@ export function PixelTown(
         );
       })}
 
-      {/* Staging-env lock item — follows the holding agent; click → lock panel. */}
+      {/* Staging-env lock item — a Cainos chest that follows the holding agent;
+          click → lock panel. The rAF toggles display + transform on this element. */}
       <div ref={lockEl} className="town-lock-item" title="staging env — locked (click to manage / release)"
         onClick={(e) => { e.stopPropagation(); onLockClick?.(); }}
-        style={{ display: 'none', position: 'absolute', left: 0, top: 0, zIndex: 4, cursor: 'pointer', alignItems: 'center', gap: 3, padding: '1px 5px', borderRadius: 8, fontSize: 11, lineHeight: '16px', whiteSpace: 'nowrap', background: '#1a1326ee', border: '1px solid #c084fc88', color: '#e9d5ff', boxShadow: '0 1px 4px #000a' }}>
-        🔒 staging
+        style={{ display: 'none', position: 'absolute', left: 0, top: 0, zIndex: 4, cursor: 'pointer', flexDirection: 'column', alignItems: 'center' }}>
+        <div style={{ width: 36, height: 30, backgroundImage: 'url(/assets/town/lock-chest.png)', backgroundSize: 'contain', backgroundRepeat: 'no-repeat', imageRendering: 'pixelated' as const, filter: 'drop-shadow(0 1px 2px #000a)' }} />
+        <span style={{ fontSize: 9, lineHeight: '11px', color: '#e9d5ff', background: '#1a1326dd', padding: '0 3px', borderRadius: 4, marginTop: -3, whiteSpace: 'nowrap' }}>staging</span>
       </div>
     </div>
     {picking && (
