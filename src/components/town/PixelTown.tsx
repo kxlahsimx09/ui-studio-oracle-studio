@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { FleetState, FleetAgent } from '../../lib/fleet';
+import type { LockState } from '../../lib/lock';
 import { groupTown } from '../../lib/town-group';
 import { buildStage } from '../../lib/town-stage';
 import { costumeFor, charIndexFor, ctxColor, activityEmoji } from '../../lib/role-costume';
@@ -30,7 +31,10 @@ function pickTarget(a: Actor) {
   a.waitT = rnd(300, 1600); // pause on arrival
 }
 
-export function PixelTown({ state, onSelect }: { state: FleetState; onSelect: (a: FleetAgent) => void }) {
+export function PixelTown(
+  { state, onSelect, lock, onLockClick }:
+  { state: FleetState; onSelect: (a: FleetAgent) => void; lock?: LockState | null; onLockClick?: () => void },
+) {
   const districts = useMemo(() => groupTown(state), [state]);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(1180);
@@ -47,6 +51,15 @@ export function PixelTown({ state, onSelect }: { state: FleetState; onSelect: (a
   const animState = useRef<Map<string, { frame: number; t: number }>>(new Map());
   const animsRef = useRef(props.anims);
   const reduceRef = useRef(false);
+  // Staging-env lock item — a 🔒 marker that trails the holder's sprite (matched
+  // by tmux pane id). Parks bottom-left when the holder isn't on the map.
+  const holderId = useMemo(() => {
+    const pane = lock?.locked ? lock.holder?.tmux_pane : null;
+    return pane ? state.agents.find((a) => a.paneId === pane)?.id ?? null : null;
+  }, [lock, state]);
+  const lockEl = useRef<HTMLDivElement>(null);
+  const lockRef = useRef<{ holderId: string | null; active: boolean }>({ holderId: null, active: false });
+  useEffect(() => { lockRef.current = { holderId, active: !!lock?.locked }; }, [holderId, lock]);
 
   // Drag a sprite to reposition it (separate overlapping agents); a no-move
   // press is treated as a click → open the chat. Dragged actors are pinned.
@@ -180,6 +193,17 @@ export function PixelTown({ state, onSelect }: { state: FleetState; onSelect: (a
         const [fx, fy] = a.spec.frames[st.frame];
         el.style.backgroundPosition = `${-fx * k}px ${-fy * k}px`;
       }
+      // Staging-env lock item follows its holder; parks bottom-left if the holder
+      // pane isn't on the map (dead / non-fleet). Hidden entirely when free/disabled.
+      const lk = lockEl.current;
+      if (lk) {
+        if (lockRef.current.active) {
+          const h = lockRef.current.holderId ? actors.current.get(lockRef.current.holderId) : null;
+          lk.style.display = 'flex';
+          if (h) lk.style.transform = `translate(${h.x + SPRITE - 10}px, ${h.y - 18}px)`;
+          else lk.style.transform = `translate(8px, ${Math.max(0, (stageRef.current?.clientHeight || 400) - 40)}px)`;
+        } else lk.style.display = 'none';
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -288,6 +312,13 @@ export function PixelTown({ state, onSelect }: { state: FleetState; onSelect: (a
           </div>
         );
       })}
+
+      {/* Staging-env lock item — follows the holding agent; click → lock panel. */}
+      <div ref={lockEl} className="town-lock-item" title="staging env — locked (click to manage / release)"
+        onClick={(e) => { e.stopPropagation(); onLockClick?.(); }}
+        style={{ display: 'none', position: 'absolute', left: 0, top: 0, zIndex: 4, cursor: 'pointer', alignItems: 'center', gap: 3, padding: '1px 5px', borderRadius: 8, fontSize: 11, lineHeight: '16px', whiteSpace: 'nowrap', background: '#1a1326ee', border: '1px solid #c084fc88', color: '#e9d5ff', boxShadow: '0 1px 4px #000a' }}>
+        🔒 staging
+      </div>
     </div>
     {picking && (
       <TexturePicker
