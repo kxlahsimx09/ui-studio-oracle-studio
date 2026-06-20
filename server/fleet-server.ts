@@ -18,6 +18,7 @@ import { listRoles, spawnAgent } from './agents';
 import { listBookmarks, addBookmark, removeBookmark, respawnBookmark } from './bookmarks';
 import { listPlans } from './usage';
 import { handlePush, startNotifyLoop } from './push';
+import { handleTelegram } from './telegram';
 import { getEnvStatus, startEnvProbe } from './env-probe';
 import { getUsage } from './usage';
 import { getLockState, releaseLock, setDisabled } from './lock-state';
@@ -64,6 +65,12 @@ const server = Bun.serve({
     if (p.startsWith('/__fleet/push/')) {
       try {
         const r = await handlePush(req, p);
+        if (r) return r;
+      } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    }
+    if (p.startsWith('/__fleet/telegram')) {
+      try {
+        const r = await handleTelegram(req, p);
         if (r) return r;
       } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
     }

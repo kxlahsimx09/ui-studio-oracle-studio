@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { groupTown } from '../src/lib/town-group';
+import { telegramEnabled, telegramPrefs, sendTelegram } from './telegram';
 import type { FleetState } from '../src/lib/fleet';
 
 const DIR = join(homedir(), '.fleet-town');
@@ -142,6 +143,8 @@ async function tick(getState: () => Promise<FleetState>) {
     for (const s of subs) if (s.prefs.teamIdle && !s.prefs.teamsOff.includes(key)) {
       void send(s, { title: `💤 ${info.name} — whole team idle`, body: `All asleep: ${shown}${more}`, tag: `team-${key}`, renotify: true });
     }
+    // Telegram: one ping per event, independent of web-push subscribers.
+    if (telegramEnabled() && telegramPrefs().teamIdle) void sendTelegram(`💤 ${info.name} — whole team idle\nAll asleep: ${shown}${more}`);
   }
 
   // Agent waiting at a TUI menu — fire only after WAIT_HOLD_MS of continuous wait.
@@ -156,6 +159,8 @@ async function tick(getState: () => Promise<FleetState>) {
     for (const s of subs) if (s.prefs.waiting && (s.prefs.agentsOn || []).includes(a.id)) {
       void send(s, { title: `🔔 ${named(a)} needs input`, body: 'Waiting at a TUI menu — tap to answer', tag: `wait-${a.id}`, url: '/town', sticky: true });
     }
+    // Telegram: alerts for ANY waiting agent (no per-agent list on this channel).
+    if (telegramEnabled() && telegramPrefs().waiting) void sendTelegram(`🔔 ${named(a)} needs input — waiting at a TUI menu`);
   }
 }
 
