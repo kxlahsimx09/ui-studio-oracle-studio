@@ -3,9 +3,11 @@
 // (lock-aware), POST {action:'cancel'} kills the active run.
 import { useEffect, useRef, useState } from 'react';
 
+export interface LegInfo { id: string; what: string; why: string; how: string; verify: string }
 export interface Control {
   env: string; label: string; type: 'toggle' | 'number' | 'text' | 'select';
   def?: string; options?: string[]; help?: string; danger?: boolean;
+  info?: LegInfo[];   // per-leg What/Why/How/Verify for the ⓘ popover (server-enriched)
 }
 export interface Suite {
   id: string; label: string; launcher: string; runtime: string; gate: string;

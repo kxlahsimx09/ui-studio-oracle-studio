@@ -3,7 +3,7 @@
 // and launches the suite's run-live-*.sh, streaming output back. Results are
 // "ran + per-leg colour", never PASS/FAIL (§ADR-21 — investigator owns the verdict).
 import { useEffect, useRef, useState } from 'react';
-import { useLiveTest, runSuite, cancelRun, type Control } from '../../lib/livetest';
+import { useLiveTest, runSuite, cancelRun, type Control, type LegInfo } from '../../lib/livetest';
 import { useLock } from '../../lib/lock';
 
 const COLOUR: Record<string, string> = { GREEN: '#4ade80', AMBER: '#fbbf24', RED: '#f87171', SKIPPED: '#64748b' };
@@ -24,25 +24,69 @@ function Legs({ legs }: { legs: unknown }) {
   return <pre className="text-[10px] text-white/50 mt-1 max-h-24 overflow-auto">{JSON.stringify(legs, null, 1)}</pre>;
 }
 
+function InfoRow({ k, v, c }: { k: string; v: string; c?: string }) {
+  if (!v) return null;
+  return (
+    <div className="grid grid-cols-[54px_1fr] gap-2 text-[11px] mb-0.5">
+      <span className="text-white/40">{k}</span><span style={{ color: c || 'rgba(255,255,255,0.82)' }}>{v}</span>
+    </div>
+  );
+}
+
+// Fullscreen ⓘ card (fixed so the panel's overflow-auto can't clip it). Lists each
+// leg the control covers as What / Why / How / Verify.
+function InfoCard({ label, info, onClose }: { label: string; info: LegInfo[]; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
+      <div className="w-[min(560px,94vw)] max-h-[86vh] overflow-auto rounded-xl border border-white/15 bg-[#0c0c12] p-4 text-left" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[13px] font-semibold text-white/90">ⓘ {label}</span>
+          <button onClick={onClose} className="text-white/50 hover:text-white/90 text-sm">✕</button>
+        </div>
+        {info.map((lg) => (
+          <div key={lg.id} className="mb-2.5 rounded-lg border border-white/10 p-2.5">
+            <div className="text-[11px] font-mono text-sky-300 mb-1">{lg.id}</div>
+            <InfoRow k="What" v={lg.what} /><InfoRow k="Why" v={lg.why} />
+            <InfoRow k="How" v={lg.how} /><InfoRow k="Verify" v={lg.verify} c="#86efac" />
+          </div>
+        ))}
+        <p className="text-[10px] text-white/40 mt-1">“Verify” = the condition this leg colours GREEN on. The harness records; the authoritative verdict is next-investigator’s L3 raw-table recompute (§ADR-21).</p>
+      </div>
+    </div>
+  );
+}
+
 function Field({ c, val, set }: { c: Control; val: unknown; set: (v: unknown) => void }) {
+  const [open, setOpen] = useState(false);
   const danger = c.danger ? { color: '#fca5a5' } : {};
-  if (c.type === 'toggle') return (
-    <label className="flex items-center gap-1.5 text-[11px]" style={danger} title={c.help}>
-      <input type="checkbox" checked={val === true} onChange={(e) => set(e.target.checked)} /> {c.label}
+  let ctrl;
+  if (c.type === 'toggle') ctrl = (
+    <label className="flex items-center gap-1.5 text-[11px] min-w-0" style={danger} title={c.help}>
+      <input type="checkbox" checked={val === true} onChange={(e) => set(e.target.checked)} /> <span className="truncate">{c.label}</span>
     </label>
   );
-  if (c.type === 'select') return (
-    <label className="flex items-center gap-1.5 text-[11px] text-white/70" title={c.help}>
-      {c.label} <select className="bg-white/10 rounded px-1 py-0.5" value={String(val ?? c.def ?? '')} onChange={(e) => set(e.target.value)}>
+  else if (c.type === 'select') ctrl = (
+    <label className="flex items-center gap-1.5 text-[11px] text-white/70 min-w-0" title={c.help}>
+      <span className="truncate">{c.label}</span> <select className="bg-white/10 rounded px-1 py-0.5" value={String(val ?? c.def ?? '')} onChange={(e) => set(e.target.value)}>
         {c.options?.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
     </label>
   );
-  return (
-    <label className="flex items-center gap-1.5 text-[11px] text-white/70" title={c.help}>
-      {c.label} <input type={c.type === 'number' ? 'number' : 'text'} placeholder={c.def || ''} className="bg-white/10 rounded px-1 py-0.5 w-20"
+  else ctrl = (
+    <label className="flex items-center gap-1.5 text-[11px] text-white/70 min-w-0" title={c.help}>
+      <span className="truncate">{c.label}</span> <input type={c.type === 'number' ? 'number' : 'text'} placeholder={c.def || ''} className="bg-white/10 rounded px-1 py-0.5 w-20"
         value={String(val ?? '')} onChange={(e) => set(e.target.value)} />
     </label>
+  );
+  return (
+    <div className="flex items-center gap-1">
+      {ctrl}
+      {!!c.info?.length && (
+        <button onClick={() => setOpen(true)} title="What / why / how this tests"
+          className="shrink-0 w-4 h-4 rounded-full border border-white/25 text-[9px] leading-[14px] text-white/55 hover:text-white hover:border-white/60">i</button>
+      )}
+      {open && !!c.info?.length && <InfoCard label={c.label} info={c.info} onClose={() => setOpen(false)} />}
+    </div>
   );
 }
 
