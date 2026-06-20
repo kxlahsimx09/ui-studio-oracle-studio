@@ -18,7 +18,7 @@ import { listRoles, spawnAgent } from './agents';
 import { listPlans } from './usage';
 import { handlePush, startNotifyLoop } from './push';
 import { getEnvStatus, startEnvProbe } from './env-probe';
-import { getUsageSnapshot, startUsage } from './usage';
+import { getUsage } from './usage';
 import { getLockState, releaseLock, setDisabled } from './lock-state';
 
 const DIST = join(import.meta.dir, '..', 'dist');
@@ -79,7 +79,7 @@ const server = Bun.serve({
     }
 
     if (p === '/__fleet/usage') {
-      return Response.json(getUsageSnapshot(), { headers: { 'cache-control': 'no-store' } });
+      return Response.json(await getUsage(), { headers: { 'cache-control': 'no-store' } });
     }
 
     // Staging-env lock: GET reads holder/disabled; POST {action} lets the owner
@@ -159,5 +159,5 @@ console.log(`fleet-server listening on http://${server.hostname}:${server.port} 
 startNotifyLoop(() => getFleetState());
 // Poll staging-env health (server/env-targets.json) for the /town Staging district.
 startEnvProbe();
-// Per-account auth + token usage (server/auth-plans.json) for the /usage view.
-startUsage();
+// Usage/quota is fetched ON-DEMAND when the /usage panel opens (getUsage) — no
+// background polling, so the town barely touches /api/oauth/usage.
