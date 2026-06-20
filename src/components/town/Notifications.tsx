@@ -2,6 +2,7 @@
 // and toggles two alerts, delivered by the fleet-server even when the app is
 // closed: whole-team-idle (per team) and an agent waiting for input (per agent).
 import { useEffect, useState } from 'react';
+import { TelegramSection } from './TelegramSection';
 
 // teamsOff = opt-OUT (teams on by default); agentsOn = opt-IN (agents off by default).
 interface Prefs { teamIdle: boolean; waiting: boolean; teamsOff: string[]; agentsOn: string[] }
@@ -142,6 +143,9 @@ export function Notifications({ teams, agents }: { teams: { key: string; name: s
                 {testMsg && <p className="mt-1 text-[10px] text-white/50 leading-snug">{testMsg}</p>}
               </>
             )}
+
+            {/* Telegram is server-side — show it regardless of browser push support. */}
+            <TelegramSection />
           </div>
         </>
       )}
