@@ -27,8 +27,8 @@ function Legs({ legs }: { legs: unknown }) {
 function InfoRow({ k, v, c }: { k: string; v: string; c?: string }) {
   if (!v) return null;
   return (
-    <div className="grid grid-cols-[54px_1fr] gap-2 text-[11px] mb-0.5">
-      <span className="text-white/40">{k}</span><span style={{ color: c || 'rgba(255,255,255,0.82)' }}>{v}</span>
+    <div className="grid grid-cols-[64px_1fr] gap-2 text-[11px] mb-0.5">
+      <span className="text-white/40 shrink-0">{k}</span><span style={{ color: c || 'rgba(255,255,255,0.82)' }}>{v}</span>
     </div>
   );
 }
@@ -45,12 +45,16 @@ function InfoCard({ label, info, onClose }: { label: string; info: LegInfo[]; on
         </div>
         {info.map((lg) => (
           <div key={lg.id} className="mb-2.5 rounded-lg border border-white/10 p-2.5">
-            <div className="text-[11px] font-mono text-sky-300 mb-1">{lg.id}</div>
-            <InfoRow k="What" v={lg.what} /><InfoRow k="Why" v={lg.why} />
-            <InfoRow k="How" v={lg.how} /><InfoRow k="Verify" v={lg.verify} c="#86efac" />
+            <div className="flex items-baseline gap-2 mb-1">
+              <span className="text-[11px] font-mono text-sky-300">{lg.id}</span>
+              {lg.ac && <span className="text-[9px] px-1 py-0.5 rounded bg-white/10 text-white/50 font-mono">{lg.ac}</span>}
+            </div>
+            {lg.title && <div className="text-[12px] font-medium text-white/90 mb-1">{lg.title}</div>}
+            <InfoRow k="เทสอะไร" v={lg.what} /><InfoRow k="ทำไม" v={lg.why} />
+            <InfoRow k="อย่างไร" v={lg.how} /><InfoRow k="ผ่านเมื่อ" v={lg.verify} c="#86efac" />
           </div>
         ))}
-        <p className="text-[10px] text-white/40 mt-1">“Verify” = the condition this leg colours GREEN on. The harness records; the authoritative verdict is next-investigator’s L3 raw-table recompute (§ADR-21).</p>
+        <p className="text-[10px] text-white/40 mt-1">“ผ่านเมื่อ” = เงื่อนไขที่ leg ขึ้นสีเขียว · harness แค่รัน+บันทึก, คำตัดสินจริงคือ L3 raw-table ของ next-investigator (§ADR-21).</p>
       </div>
     </div>
   );
