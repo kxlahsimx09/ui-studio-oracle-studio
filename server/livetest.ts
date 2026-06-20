@@ -9,6 +9,7 @@ import { homedir } from 'node:os';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { SUITES, GLOBAL_CONTROLS, suiteById, buildEnv } from './livetest-catalog';
+import { infoForControl } from './livetest-info';
 import { getFleetState } from './fleet-probe';
 
 interface Cfg { integrationDir: string; lockScript: string; agent: string }
@@ -35,7 +36,16 @@ let child: ChildProcess | null = null;
 const LOG_MAX = 500;
 const push = (line: string) => { run.log.push(line); if (run.log.length > LOG_MAX) run.log.splice(0, run.log.length - LOG_MAX); };
 
-export const getCatalog = () => SUITES;
+// Enrich each control with its ⓘ leg-info (What/Why/How/Verify) so the panel can
+// render an info popover next to the checkbox. Controls without mapped legs are
+// passed through unchanged (no ⓘ).
+export const getCatalog = () => SUITES.map((s) => ({
+  ...s,
+  controls: s.controls.map((c) => {
+    const info = infoForControl(s.id, c.env);
+    return info.length ? { ...c, info } : c;
+  }),
+}));
 export const getGlobals = () => GLOBAL_CONTROLS;
 export const getRun = (): RunState => run;
 
