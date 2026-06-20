@@ -143,7 +143,20 @@ async function fetchQuota(token: string): Promise<Quota> {
 }
 
 let snapshot: unknown[] = [];
-export const getUsageSnapshot = () => snapshot;
+let lastAt = 0;
+let inFlight: Promise<void> | null = null;
+const THROTTLE_MS = 60_000; // re-open within a minute reuses the result; else pull fresh
+
+// ON-DEMAND: the town fetches this only when the usage panel opens — there is NO
+// background polling loop, so the fleet's footprint on /api/oauth/usage is near
+// zero (the panel is opened rarely). Concurrent opens (e.g. two screens) share one
+// in-flight refresh; a re-open within THROTTLE_MS reuses the last result.
+export async function getUsage(): Promise<unknown[]> {
+  if (snapshot.length && Date.now() - lastAt < THROTTLE_MS) return snapshot;
+  if (!inFlight) inFlight = refresh().finally(() => { inFlight = null; lastAt = Date.now(); });
+  await inFlight;
+  return snapshot;
+}
 
 // Last good quota per account — so a 429/timeout keeps showing the last real
 // numbers (flagged stale) instead of blanking the panel. PERSISTED to disk so a
@@ -194,5 +207,3 @@ async function refresh() {
     saveCache(); // persist any new good reads so a restart survives a rate-limited stretch
   } catch (e) { console.error('[usage] refresh failed', (e as Error).message); }
 }
-
-export function startUsage(ms = 300_000) { void refresh(); setInterval(() => void refresh(), ms); } // every 5 min
