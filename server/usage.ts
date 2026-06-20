@@ -85,6 +85,13 @@ export function listPlans(): Array<{ id: string; name: string }> {
 export function planById(id: string): Plan | undefined {
   return loadPlans().find((p) => p.id === id);
 }
+/** The plan's account config dir (expanded), or '' if token-only/default. Pinning
+ *  via CLAUDE_CONFIG_DIR is what actually controls BILLING — the inference client
+ *  bills whichever account this dir's .credentials.json is logged into (the env
+ *  CLAUDE_CODE_OAUTH_TOKEN only drives auth-status/the badge, NOT billing). */
+export function planConfigDir(p: Plan): string {
+  return p.dir ? expandTilde(p.dir) : '';
+}
 /** The plan's web-auth token: an explicit `token`, else read from its config-dir. */
 export function planAccessToken(p: Plan): string | null {
   const tok = (p.token || '').trim();

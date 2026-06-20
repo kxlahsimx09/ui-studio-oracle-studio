@@ -5,8 +5,9 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { planById, planSpawnToken, planIsPassthrough } from './usage';
+import { planById, planSpawnToken, planConfigDir, planIsPassthrough } from './usage';
 import { recordPinned } from './pinned-accounts';
+import { ensureAccountDir } from './account-dirs';
 
 const HOME = homedir();
 const MAW = join(HOME, '.bun/bin/maw');
@@ -57,14 +58,25 @@ function buildWakeArgs(role: string, slug: string, planId: string | undefined, f
   if (planId) {
     const plan = planById(planId);
     if (!plan) throw new Error(`unknown plan: ${planId}`);
-    if (!planIsPassthrough(plan)) {            // a pinned account → inject its long-lived setup-token
+    if (!planIsPassthrough(plan)) {            // a pinned account
       if (!mawSupportsEnv()) throw new Error('account-pinning needs the maw --env flag (PR feat/wake-env) — not in the running maw yet; merge it + resync the maw primary, or spawn on the default account');
-      const token = planSpawnToken(plan);
-      // Fail loud: injecting the dir's ephemeral ~1h access token makes the agent
-      // 401 → die when the account's token rotates (re-login). Require a setup-token.
-      if (!token) throw new Error(`plan "${plan.name}" has no spawnToken. Mint a long-lived (~1yr) token with \`CLAUDE_CONFIG_DIR=${plan.dir || '~/.claude-<acct>'} claude setup-token\` and add it to ~/.fleet-town/auth-plans.json as "spawnToken" for this plan. (A frozen ~1h access token would kill the agent on token rotation.)`);
-      args.push('--env', `CLAUDE_CODE_OAUTH_TOKEN=${token}`);
-      recordPinned(token, plan.name); // badge names the account; a setup-token never rotates
+      // BILLING is controlled by CLAUDE_CONFIG_DIR (the account's own logged-in dir),
+      // NOT by CLAUDE_CODE_OAUTH_TOKEN — the env token only sets auth-status/the badge,
+      // while inference bills whatever account the config dir's .credentials.json holds.
+      // (Proven 2026-06-20: token+default-dir billed the DEFAULT account, not the pin.)
+      const dir = planConfigDir(plan);
+      if (dir) {
+        ensureAccountDir(dir);                  // replicate shared MCP/hooks/settings so the agent keeps its tools
+        args.push('--env', `CLAUDE_CONFIG_DIR=${dir}`);
+      } else {
+        // No account dir → fall back to token injection. NOTE: this pins the BADGE
+        // only; inference still bills the default account. Add a `dir` (the account's
+        // ~/.claude-<acct>, logged into that account) to actually bill it.
+        const token = planSpawnToken(plan);
+        if (!token) throw new Error(`plan "${plan.name}" has no "dir" and no setup-token. To BILL this account, set "dir" to its ~/.claude-<acct> (logged into that account) in ~/.fleet-town/auth-plans.json. (A token alone pins only the badge, not billing.)`);
+        args.push('--env', `CLAUDE_CODE_OAUTH_TOKEN=${token}`);
+        recordPinned(token, plan.name);
+      }
     }
   }
   return args;
