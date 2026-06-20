@@ -8,6 +8,7 @@ import { capturePane, fetchTranscript, sendToPane, sendKeyToPane, closePaneSessi
 import { costumeFor, ctxColor } from '../../lib/role-costume';
 import { loadPresets, savePresets, PROMPT_MARK, type ChatPreset } from '../../lib/presets';
 import { PresetManager } from './PresetManager';
+import { LiveTestPanel } from './LiveTestPanel';
 
 const NAV_KEYS: Array<[string, string]> = [['↑', 'up'], ['↓', 'down'], ['←', 'left'], ['→', 'right']];
 type Tab = 'history' | 'live';
@@ -34,6 +35,8 @@ function linkify(s: string): ReactNode[] {
 export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>('live');
   const [text, setText] = useState('');
+  const [showLiveTest, setShowLiveTest] = useState(false);
+  const isLiveTester = agent.role === 'next-live-tester' || agent.windowName?.startsWith('next-live-tester');
   // Persist the unsent draft per agent — survives closing/reopening the window.
   const draftKey = `town:draft:${agent.id}`;
   const [input, setInput] = useState(() => {
@@ -197,6 +200,11 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
             style={{ background: '#f8717122', color: '#f87171', border: '1px solid #f8717155' }}
             title="close (kill) this agent's session"
           >{confirmClose ? 'confirm ✓' : '✖ close session'}</button>
+          {isLiveTester && (
+            <button onClick={() => setShowLiveTest(true)} className="ml-1 text-[10px] px-1.5 py-0.5 rounded"
+              style={{ background: '#c084fc22', color: '#d9bbff', border: '1px solid #c084fc55' }}
+              title="run live test suites (A/B/C/D/DEP) on staging">🧪 run suites</button>
+          )}
           <button onClick={onClose} className="ml-1 text-white/50 hover:text-white/90 text-sm" title="close window">✕</button>
         </header>
 
@@ -279,6 +287,7 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
           onClose={() => setManaging(false)}
         />
       )}
+      {showLiveTest && <LiveTestPanel onClose={() => setShowLiveTest(false)} />}
     </div>
   );
 }

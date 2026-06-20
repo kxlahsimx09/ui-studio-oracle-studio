@@ -20,6 +20,7 @@ import { handlePush, startNotifyLoop } from './push';
 import { getEnvStatus, startEnvProbe } from './env-probe';
 import { getUsage } from './usage';
 import { getLockState, releaseLock, setDisabled } from './lock-state';
+import { getCatalog, getRun, startRun, cancelRun } from './livetest';
 
 const DIST = join(import.meta.dir, '..', 'dist');
 const PORT = Number(process.env.FLEET_PORT || 8788);
@@ -96,6 +97,20 @@ const server = Bun.serve({
         } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
       }
       return Response.json(getLockState(), { headers: { 'cache-control': 'no-store' } });
+    }
+
+    // Live-tester run panel: GET = suite catalog + current run state; POST {suite,env}
+    // launches a run (lock-aware); POST {action:cancel} kills the active run.
+    if (p === '/__fleet/livetest') {
+      if (req.method === 'POST') {
+        try {
+          const b = (await req.json()) as { suite?: string; env?: Record<string, unknown>; campaign?: string; action?: string };
+          if (b.action === 'cancel') return Response.json(cancelRun());
+          const r = await startRun(b.suite || '', b.env || {}, b.campaign || 'livetest');
+          return Response.json(r, { status: 'error' in r ? 400 : 200 });
+        } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+      }
+      return Response.json({ suites: getCatalog(), run: getRun() }, { headers: { 'cache-control': 'no-store' } });
     }
 
     if (p === '/__fleet/pane') {
