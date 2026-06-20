@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { FleetAgent } from '../../lib/fleet';
-import { capturePane, fetchTranscript, sendToPane, sendKeyToPane, closePaneSession, fetchRoles, newAgent, type AgentPlan } from '../../lib/fleet';
+import { capturePane, fetchTranscript, sendToPane, sendKeyToPane, closePaneSession, fetchRoles, newAgent, addBookmark, type AgentPlan } from '../../lib/fleet';
 import { costumeFor, ctxColor } from '../../lib/role-costume';
 import { loadPresets, savePresets, PROMPT_MARK, type ChatPreset } from '../../lib/presets';
 import { PresetManager } from './PresetManager';
@@ -49,6 +49,15 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
   const [managing, setManaging] = useState(false);
   const [plans, setPlans] = useState<AgentPlan[]>([]);
   const [switching, setSwitching] = useState(false);
+  const [bm, setBm] = useState<'idle' | 'saving' | 'done' | 'err'>('idle');
+
+  // Bookmark this agent's resume recipe (role+worktree+account) so it can be closed
+  // now and respawned later with its context. Only resumable for maw-wake agents.
+  const doBookmark = async () => {
+    setBm('saving');
+    try { await addBookmark(agent); setBm('done'); }
+    catch { setBm('err'); }
+  };
   // A spawnable slug (its worktree/campaign) — switch only makes sense for these.
   const slug = agent.label && agent.label !== 'oracle' ? agent.label : '';
 
@@ -200,6 +209,12 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
             style={{ background: '#f8717122', color: '#f87171', border: '1px solid #f8717155' }}
             title="close (kill) this agent's session"
           >{confirmClose ? 'confirm ✓' : '✖ close session'}</button>
+          {agent.worktree && (
+            <button onClick={doBookmark} disabled={bm === 'saving'} className="ml-1 text-[10px] px-1.5 py-0.5 rounded disabled:opacity-40"
+              style={{ background: '#fbbf2422', color: '#fbbf24', border: '1px solid #fbbf2455' }}
+              title="bookmark this agent → respawn it later (same worktree + account, with context) from the 🔖 panel">
+              {bm === 'done' ? '🔖 saved' : bm === 'err' ? '🔖 failed' : bm === 'saving' ? '🔖 …' : '🔖 bookmark'}</button>
+          )}
           {isLiveTester && (
             <button onClick={() => setShowLiveTest(true)} className="ml-1 text-[10px] px-1.5 py-0.5 rounded"
               style={{ background: '#c084fc22', color: '#d9bbff', border: '1px solid #c084fc55' }}

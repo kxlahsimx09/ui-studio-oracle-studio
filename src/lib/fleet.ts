@@ -22,6 +22,7 @@ export interface FleetAgent {
   ctxModel?: string;   // model id behind that context window
   waiting?: boolean;   // parked on a TUI menu, blocking on a human answer
   plan?: string;       // Claude account the agent runs on (account-pinned spawn); absent = default
+  worktree?: string;   // exact `maw wake --wt <worktree>` value for resume/bookmark; absent = primary checkout
 }
 
 export interface FleetTeam {
@@ -143,6 +144,58 @@ export async function newAgent(role: string, slug: string, planId?: string): Pro
   });
   const j = await res.json().catch(() => ({}));
   if (!res.ok || j.error) throw new Error(j.error || `new ${res.status}`);
+  return (j.output as string) ?? '';
+}
+
+// ── Bookmarks ────────────────────────────────────────────────────────────────
+// Save an agent's resume recipe (role + worktree + account) so you can close its
+// session now and RESPAWN it later with its context (`maw wake --wt`, no --fresh).
+export interface Bookmark {
+  id: string;          // stable key (worktree+role)
+  role: string;
+  worktree: string;    // exact `maw wake --wt` value
+  planId?: string;     // Claude account to re-pin on respawn
+  planName?: string;   // display
+  label?: string;
+  windowName?: string;
+  note?: string;
+  savedAt: number;
+}
+
+export async function listBookmarks(): Promise<Bookmark[]> {
+  const res = await fetch('/__fleet/bookmarks');
+  const j = await res.json().catch(() => ({}));
+  return (j.bookmarks as Bookmark[]) ?? [];
+}
+
+/** Bookmark a live agent (server captures role+worktree+account from it). */
+export async function addBookmark(agent: FleetAgent, note?: string): Promise<Bookmark> {
+  const res = await fetch('/__fleet/bookmarks', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ role: agent.role, worktree: agent.worktree, planName: agent.plan, label: agent.label, windowName: agent.windowName, note }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || j.error) throw new Error(j.error || `bookmark ${res.status}`);
+  return j.bookmark as Bookmark;
+}
+
+export async function removeBookmark(id: string): Promise<void> {
+  const res = await fetch('/__fleet/bookmarks', {
+    method: 'DELETE', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || j.error) throw new Error(j.error || `unbookmark ${res.status}`);
+}
+
+/** Respawn a bookmark — RESUME its session on the same worktree + account. */
+export async function respawnBookmark(id: string): Promise<string> {
+  const res = await fetch('/__fleet/respawn', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || j.error) throw new Error(j.error || `respawn ${res.status}`);
   return (j.output as string) ?? '';
 }
 

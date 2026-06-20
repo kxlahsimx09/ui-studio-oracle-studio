@@ -16,6 +16,7 @@ import { Notifications } from '../components/town/Notifications';
 import { StagingBand } from '../components/town/StagingBand';
 import { UsagePanel } from '../components/town/UsagePanel';
 import { LockPanel } from '../components/town/LockPanel';
+import { BookmarksPanel } from '../components/town/BookmarksPanel';
 import './Town.css';
 
 type TownView = 'map' | 'list';
@@ -43,6 +44,7 @@ export function Town() {
   const [showNew, setShowNew] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
   const [showLock, setShowLock] = useState(false);
+  const [showBookmarks, setShowBookmarks] = useState(false);
   const polledLock = useLock(4000);
   const [lock, setLock] = useState<LockState | null>(null);
   useEffect(() => { if (polledLock) setLock(polledLock); }, [polledLock]);
@@ -88,6 +90,12 @@ export function Town() {
             title="account usage / quota"
           >📊 usage</button>
           <button
+            onClick={() => setShowBookmarks(true)}
+            className="px-2.5 py-1 rounded-full text-[11px]"
+            style={{ background: '#fbbf2422', color: '#fcd34d', border: '1px solid #fbbf2455' }}
+            title="bookmarked agents — respawn a closed agent with its context"
+          >🔖 bookmarks</button>
+          <button
             onClick={() => setShowLock(true)}
             className="px-2.5 py-1 rounded-full text-[11px]"
             style={lock?.disabled
@@ -131,6 +139,7 @@ export function Town() {
       {selected && <AgentChat key={selected.id} agent={selected} onClose={() => setSelectedId(null)} />}
       {showNew && <NewAgent onClose={() => setShowNew(false)} />}
       {showUsage && <UsagePanel onClose={() => setShowUsage(false)} />}
+      {showBookmarks && <BookmarksPanel onClose={() => setShowBookmarks(false)} />}
       {showLock && <LockPanel lock={lock} agents={state.agents} onChange={setLock} onClose={() => setShowLock(false)} />}
 
       {loading && !state.agents.length && (
