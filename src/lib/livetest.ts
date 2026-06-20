@@ -3,7 +3,7 @@
 // (lock-aware), POST {action:'cancel'} kills the active run.
 import { useEffect, useRef, useState } from 'react';
 
-export interface LegInfo { id: string; what: string; why: string; how: string; verify: string }
+export interface LegInfo { id: string; title?: string; ac?: string; what: string; why: string; how: string; verify: string }
 export interface Control {
   env: string; label: string; type: 'toggle' | 'number' | 'text' | 'select';
   def?: string; options?: string[]; help?: string; danger?: boolean;
