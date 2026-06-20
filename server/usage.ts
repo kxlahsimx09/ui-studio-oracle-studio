@@ -97,7 +97,13 @@ export function planAccessToken(p: Plan): string | null {
  *  Claude Code never refreshes) it makes the agent 401 → exit when the account's
  *  token rotates. A setup-token survives rotation and re-login. '' if not set. */
 export function planSpawnToken(p: Plan): string {
-  return (p.spawnToken || '').trim();
+  const st = (p.spawnToken || '').trim();
+  if (st) return st;
+  // Fall back to an explicit long-lived web-auth token in `token` (the auth-plans
+  // README convention): a `claude setup-token` value lives fine there too. We only
+  // accept an `sk-ant-oat` (web-auth) token, never the dir's ephemeral access token.
+  const tok = (p.token || '').trim();
+  return tok.startsWith('sk-ant-oat') ? tok : '';
 }
 /** A plan is the true passthrough (use the logged-in ~/.claude, no injection)
  *  only when it pins NO dir, NO token, and NO spawnToken. A named plan with a dir
