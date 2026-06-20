@@ -45,16 +45,15 @@ export function listRoles(): string[] {
   return [...set].sort();
 }
 
-/** Spawn `role` on worktree `slug` via `maw wake`. An optional `planId` pins the
- *  agent to a specific Claude account by injecting that account's long-lived
- *  setup-token (CLAUDE_CODE_OAUTH_TOKEN) — keeping the default config dir so
- *  MCP/hooks/skills stay intact. A setup-token (not the dir's ephemeral ~1h access
- *  token) is required so the agent survives the account's token rotation/re-login.
- *  Needs the maw `--env` flag (maw PR feat/wake-env). Returns maw's output. */
-export function spawnAgent(role: string, slug: string, planId?: string): string {
+// Build the `maw wake` argv for a role on worktree `slug`. `fresh` ⇒ --fresh (new
+// session); omit it to RESUME (maw reuses the worktree + auto `--continue` on the
+// persisted JSONL). `planId` pins a Claude account by injecting its long-lived
+// setup-token (keeping the default config dir so MCP/hooks/skills stay intact).
+function buildWakeArgs(role: string, slug: string, planId: string | undefined, fresh: boolean): string[] {
   if (!listRoles().includes(role)) throw new Error(`unknown role: ${role}`);
   if (!SLUG_RE.test(slug)) throw new Error('slug must be alphanumeric/dash, ≤31 chars');
-  const args = ['wake', role, '--wt', slug, '--fresh'];
+  const args = ['wake', role, '--wt', slug];
+  if (fresh) args.push('--fresh');
   if (planId) {
     const plan = planById(planId);
     if (!plan) throw new Error(`unknown plan: ${planId}`);
@@ -68,8 +67,27 @@ export function spawnAgent(role: string, slug: string, planId?: string): string 
       recordPinned(token, plan.name); // badge names the account; a setup-token never rotates
     }
   }
+  return args;
+}
+
+function runMaw(args: string[]): string {
   return execFileSync(MAW, args, {
     encoding: 'utf8', timeout: 120_000, maxBuffer: 4_000_000,
     env: { ...process.env, PATH: `${TOOL_PATH}:${process.env.PATH || ''}` },
   });
+}
+
+/** Spawn a FRESH agent on worktree `slug` (`maw wake … --fresh`). `planId` pins an
+ *  account via its setup-token. Needs the maw `--env` flag. Returns maw's output. */
+export function spawnAgent(role: string, slug: string, planId?: string): string {
+  return runMaw(buildWakeArgs(role, slug, planId, true));
+}
+
+/** RESUME a previously-closed agent on its EXACT worktree (`maw wake … --wt
+ *  <worktree>`, no --fresh ⇒ maw reuses the worktree and `claude --continue`s the
+ *  persisted session). Re-pins `planId` so the resumed agent keeps its account.
+ *  This is what a Fleet-Town bookmark fires. Only meaningful for maw-wake agents
+ *  (town-spawned); team-spawned teammates are recovered by their orchestrator. */
+export function respawnAgent(role: string, worktree: string, planId?: string): string {
+  return runMaw(buildWakeArgs(role, worktree, planId, false));
 }

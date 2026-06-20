@@ -137,7 +137,10 @@ export async function getFleetState(): Promise<FleetState> {
     const waiting = rest.status === 'idle' ? paneNeedsInput(rest.paneId) : false;
     // Which Claude account this agent runs on ('' = default logged-in → no badge).
     const plan = rest.status === 'offline' ? '' : planForPane(rest.paneId, panePid);
-    return { ...rest, team: isTeam ? (mappedTeam ?? rest.label) : null, ctxPct: ctx?.pct, ctxModel: ctx?.model, waiting, plan: plan || undefined };
+    // The exact `maw wake --wt <worktree>` value for resume/bookmark — the cwd's
+    // worktree suffix (…/<repo>.wt-<worktree>). '' for a primary checkout (not resumable).
+    const worktree = cwd.includes('.wt-') ? cwd.split('.wt-').pop()!.split('/')[0] : '';
+    return { ...rest, team: isTeam ? (mappedTeam ?? rest.label) : null, ctxPct: ctx?.pct, ctxModel: ctx?.model, waiting, plan: plan || undefined, worktree: worktree || undefined };
   });
 
   // Dispatch roads: orchestrator → worker whose slug extends the orchestrator's slug

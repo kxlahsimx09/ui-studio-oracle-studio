@@ -15,6 +15,7 @@ import { getFleetState } from './fleet-probe';
 import { capturePane, sendToPane, sendKey, closePane } from './pane-io';
 import { transcriptFor } from './transcript';
 import { listRoles, spawnAgent } from './agents';
+import { listBookmarks, addBookmark, removeBookmark, respawnBookmark } from './bookmarks';
 import { listPlans } from './usage';
 import { handlePush, startNotifyLoop } from './push';
 import { getEnvStatus, startEnvProbe } from './env-probe';
@@ -147,6 +148,26 @@ const server = Bun.serve({
         const b = (await req.json()) as { id?: string };
         closePane(b.id || '');
         return Response.json({ ok: true });
+      } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    }
+    if (p === '/__fleet/bookmarks') {
+      try {
+        if (req.method === 'GET') return Response.json({ bookmarks: listBookmarks() });
+        if (req.method === 'POST') {
+          const b = (await req.json()) as Record<string, string>;
+          return Response.json({ ok: true, bookmark: addBookmark({ ...b, savedAt: Date.now() }) });
+        }
+        if (req.method === 'DELETE') {
+          const b = (await req.json()) as { id?: string };
+          removeBookmark(b.id || '');
+          return Response.json({ ok: true });
+        }
+      } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    }
+    if (p === '/__fleet/respawn' && req.method === 'POST') {
+      try {
+        const b = (await req.json()) as { id?: string };
+        return Response.json({ ok: true, output: respawnBookmark(b.id || '') });
       } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
     }
 
