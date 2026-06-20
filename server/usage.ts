@@ -13,7 +13,9 @@ import { execFileSync } from 'node:child_process';
 const PLANS_FILE = join(homedir(), '.fleet-town', 'auth-plans.json');
 // A plan is EITHER dir-based (CLAUDE_CONFIG_DIR) or token-based (a web-auth OAuth
 // token). dir '' + token '' = the default logged-in ~/.claude.
-export interface Plan { id: string; name: string; dir?: string; token?: string }
+// `spawnToken` is a long-lived `claude setup-token` (~1yr) used ONLY to pin a
+// spawned agent — see planSpawnToken below for why the dir's access token can't.
+export interface Plan { id: string; name: string; dir?: string; token?: string; spawnToken?: string }
 export function loadPlans(): Plan[] {
   let plans: Plan[] = [{ id: 'default', name: 'Default', dir: '' }];
   try {
@@ -89,10 +91,25 @@ export function planAccessToken(p: Plan): string | null {
   if (tok && tok.startsWith('sk-ant-oat')) return tok;
   return accessToken(p.dir || '');
 }
+/** The long-lived `claude setup-token` (~1yr) used to PIN a spawned agent.
+ *  Why not the dir's access token (planAccessToken)? That token expires in ~1h and
+ *  is revoked on re-login; injected as a frozen CLAUDE_CODE_OAUTH_TOKEN (which
+ *  Claude Code never refreshes) it makes the agent 401 → exit when the account's
+ *  token rotates. A setup-token survives rotation and re-login. '' if not set. */
+export function planSpawnToken(p: Plan): string {
+  const st = (p.spawnToken || '').trim();
+  if (st) return st;
+  // Fall back to an explicit long-lived web-auth token in `token` (the auth-plans
+  // README convention): a `claude setup-token` value lives fine there too. We only
+  // accept an `sk-ant-oat` (web-auth) token, never the dir's ephemeral access token.
+  const tok = (p.token || '').trim();
+  return tok.startsWith('sk-ant-oat') ? tok : '';
+}
 /** A plan is the true passthrough (use the logged-in ~/.claude, no injection)
- *  only when it pins NO dir and NO token. A named plan with a dir still injects. */
+ *  only when it pins NO dir, NO token, and NO spawnToken. A named plan with a dir
+ *  (or a spawnToken) still injects. */
 export function planIsPassthrough(p: Plan): boolean {
-  return !p.dir && !(p.token || '').trim();
+  return !p.dir && !(p.token || '').trim() && !(p.spawnToken || '').trim();
 }
 
 // One quota limit, mirroring the CLI /usage breakdown. `used` is the % consumed
