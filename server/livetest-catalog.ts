@@ -33,7 +33,6 @@ export const SUITES: Suite[] = [
       T('OWNER_GO_LIVE_MT', 'Multi-tenant', 'ACT MT — sub-client + concurrency', true),
       T('OWNER_GO_LIVE_KTB', 'KTB lane', 'ACT KTB — second-bank dialect', true),
       T('OWNER_GO_LIVE_ENFORCE', 'Enforce-only', 'LIGHT system-bank enforce legs — NO money, safe anytime'),
-      T('LIVE_DEDICATED_STACK', 'Dedicated-stack wipe', '⚠ wipes staging txns at START (keeps config). OFF = append', true),
       { env: 'RECEIVER_BASE_URL', label: 'Receiver', type: 'select', def: 'deployed', options: ['deployed', 'local'], help: 'deployed mock-merchant, or local + cloudflared tunnel' },
       { env: 'KEEP_ALERTS_API', label: 'Keep alerts API', type: 'text', help: 'set ⇒ confirm P2.12/16/17 alerts in-harness (needs KEEP_API_KEY)' },
     ],
@@ -86,14 +85,21 @@ export const SUITES: Suite[] = [
 
 export const suiteById = (id: string) => SUITES.find((s) => s.id === id);
 
-// Validate a raw {env: value} from the panel against the suite's controls → the
-// real env to pass the launcher. Unknown keys dropped; toggles only when truthy;
+// GLOBAL controls — apply to EVERY suite (cross-cutting), rendered in their own
+// section and passed to whichever launcher runs. LIVE_DEDICATED_STACK (wipe staging
+// txns at START) is a per-run mode, not a per-suite leg, so it lives here.
+export const GLOBAL_CONTROLS: Control[] = [
+  T('LIVE_DEDICATED_STACK', 'Dedicated-stack wipe', '⚠ wipes ALL staging txns at START (keeps config). OFF = append mode', true),
+];
+
+// Validate a raw {env: value} from the panel against the GLOBAL + suite controls →
+// the real env to pass the launcher. Unknown keys dropped; toggles only when truthy;
 // selects must be a listed option; numbers must be numeric.
 export function buildEnv(suiteId: string, raw: Record<string, unknown>): Record<string, string> {
   const s = suiteById(suiteId);
   if (!s) throw new Error(`unknown suite ${suiteId}`);
   const out: Record<string, string> = {};
-  for (const c of s.controls) {
+  for (const c of [...GLOBAL_CONTROLS, ...s.controls]) {
     const v = raw[c.env];
     if (v == null || v === '' || v === false) continue;
     if (c.type === 'toggle') { if (v === true || v === '1' || v === 1) out[c.env] = '1'; }

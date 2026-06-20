@@ -20,7 +20,7 @@ import { handlePush, startNotifyLoop } from './push';
 import { getEnvStatus, startEnvProbe } from './env-probe';
 import { getUsage } from './usage';
 import { getLockState, releaseLock, setDisabled } from './lock-state';
-import { getCatalog, getRun, startRun, cancelRun } from './livetest';
+import { getCatalog, getGlobals, getRun, startRun, cancelRun } from './livetest';
 
 const DIST = join(import.meta.dir, '..', 'dist');
 const PORT = Number(process.env.FLEET_PORT || 8788);
@@ -110,7 +110,7 @@ const server = Bun.serve({
           return Response.json(r, { status: 'error' in r ? 400 : 200 });
         } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
       }
-      return Response.json({ suites: getCatalog(), run: getRun() }, { headers: { 'cache-control': 'no-store' } });
+      return Response.json({ suites: getCatalog(), globals: getGlobals(), run: getRun() }, { headers: { 'cache-control': 'no-store' } });
     }
 
     if (p === '/__fleet/pane') {

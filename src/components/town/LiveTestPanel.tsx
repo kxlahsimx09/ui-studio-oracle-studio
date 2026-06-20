@@ -51,6 +51,7 @@ export function LiveTestPanel({ onClose }: { onClose: () => void }) {
   const lock = useLock(3000);
   const [suiteId, setSuiteId] = useState('B');
   const [vals, setVals] = useState<Record<string, unknown>>({});
+  const [gvals, setGvals] = useState<Record<string, unknown>>({}); // global controls — persist across suite switches
   const [campaign, setCampaign] = useState('livetest');
   const [msg, setMsg] = useState<string | null>(null);
   const logRef = useRef<HTMLPreElement>(null);
@@ -63,9 +64,9 @@ export function LiveTestPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [run?.log]);
 
   const launch = async () => {
-    if (vals.LIVE_DEDICATED_STACK && !window.confirm('LIVE_DEDICATED_STACK wipes ALL staging transactions at start. Continue?')) return;
+    if (gvals.LIVE_DEDICATED_STACK && !window.confirm('LIVE_DEDICATED_STACK wipes ALL staging transactions at start. Continue?')) return;
     setMsg(null);
-    const r = await runSuite(suiteId, vals, campaign || 'livetest');
+    const r = await runSuite(suiteId, { ...gvals, ...vals }, campaign || 'livetest');
     if (r.held) { const h = r.held as { holder?: { agent?: string } }; setMsg(`staging is HELD by ${h.holder?.agent || 'another agent'} — use the 🔒 panel to seize, or wait.`); }
     else if (r.error) setMsg(r.error);
   };
@@ -93,7 +94,15 @@ export function LiveTestPanel({ onClose }: { onClose: () => void }) {
         </div>
         {suite && <p className="text-[10px] text-white/45 mb-2"><code className="text-white/70">{suite.launcher}</code> · ~{suite.runtime} · {suite.gate}{suite.ownerGated ? ' · ⚠ moves SIM money' : ''}</p>}
 
-        {/* options */}
+        {/* global controls — apply to every suite, persist across switches */}
+        {!!data?.globals?.length && (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 rounded-lg border border-amber-400/20 bg-amber-400/5 px-2.5 py-1.5">
+            <span className="text-[10px] text-white/40 w-full">Global (all suites)</span>
+            {data.globals.map((c) => <Field key={c.env} c={c} val={gvals[c.env]} set={(v) => setGvals((m) => ({ ...m, [c.env]: v }))} />)}
+          </div>
+        )}
+
+        {/* per-suite options */}
         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mb-3 rounded-lg border border-white/10 p-2.5">
           {suite?.controls.map((c) => <Field key={c.env} c={c} val={vals[c.env]} set={(v) => setVals((m) => ({ ...m, [c.env]: v }))} />)}
         </div>

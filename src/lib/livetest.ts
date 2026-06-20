@@ -16,7 +16,7 @@ export interface RunState {
   suite?: string; campaign?: string; startedAt?: number; endedAt?: number;
   exitCode?: number | null; log: string[]; legs?: unknown; evidenceDir?: string; error?: string;
 }
-export interface LiveTest { suites: Suite[]; run: RunState }
+export interface LiveTest { suites: Suite[]; globals: Control[]; run: RunState }
 
 export function useLiveTest(open: boolean): { data: LiveTest | null; reload: () => void } {
   const [data, setData] = useState<LiveTest | null>(null);

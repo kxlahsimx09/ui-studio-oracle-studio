@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
-import { SUITES, suiteById, buildEnv } from './livetest-catalog';
+import { SUITES, GLOBAL_CONTROLS, suiteById, buildEnv } from './livetest-catalog';
 import { getFleetState } from './fleet-probe';
 
 interface Cfg { integrationDir: string; lockScript: string; agent: string }
@@ -36,6 +36,7 @@ const LOG_MAX = 500;
 const push = (line: string) => { run.log.push(line); if (run.log.length > LOG_MAX) run.log.splice(0, run.log.length - LOG_MAX); };
 
 export const getCatalog = () => SUITES;
+export const getGlobals = () => GLOBAL_CONTROLS;
 export const getRun = (): RunState => run;
 
 async function nltPane(agent: string): Promise<string> {
