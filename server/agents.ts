@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { planById, planAccessToken, planIsPassthrough } from './usage';
+import { planById, planSpawnToken, planIsPassthrough } from './usage';
 import { recordPinned } from './pinned-accounts';
 
 const HOME = homedir();
@@ -46,9 +46,11 @@ export function listRoles(): string[] {
 }
 
 /** Spawn `role` on worktree `slug` via `maw wake`. An optional `planId` pins the
- *  agent to a specific Claude account by injecting its web-auth token
- *  (CLAUDE_CODE_OAUTH_TOKEN) — keeping the default config dir so MCP/hooks/skills
- *  stay intact. Needs the maw `--env` flag (maw PR feat/wake-env). Returns maw's output. */
+ *  agent to a specific Claude account by injecting that account's long-lived
+ *  setup-token (CLAUDE_CODE_OAUTH_TOKEN) — keeping the default config dir so
+ *  MCP/hooks/skills stay intact. A setup-token (not the dir's ephemeral ~1h access
+ *  token) is required so the agent survives the account's token rotation/re-login.
+ *  Needs the maw `--env` flag (maw PR feat/wake-env). Returns maw's output. */
 export function spawnAgent(role: string, slug: string, planId?: string): string {
   if (!listRoles().includes(role)) throw new Error(`unknown role: ${role}`);
   if (!SLUG_RE.test(slug)) throw new Error('slug must be alphanumeric/dash, ≤31 chars');
@@ -56,12 +58,14 @@ export function spawnAgent(role: string, slug: string, planId?: string): string 
   if (planId) {
     const plan = planById(planId);
     if (!plan) throw new Error(`unknown plan: ${planId}`);
-    if (!planIsPassthrough(plan)) {            // a pinned account → inject its web-auth token
+    if (!planIsPassthrough(plan)) {            // a pinned account → inject its long-lived setup-token
       if (!mawSupportsEnv()) throw new Error('account-pinning needs the maw --env flag (PR feat/wake-env) — not in the running maw yet; merge it + resync the maw primary, or spawn on the default account');
-      const token = planAccessToken(plan);
-      if (!token) throw new Error(`no web-auth token for plan "${plan.name}" (open that account once to refresh)`);
+      const token = planSpawnToken(plan);
+      // Fail loud: injecting the dir's ephemeral ~1h access token makes the agent
+      // 401 → die when the account's token rotates (re-login). Require a setup-token.
+      if (!token) throw new Error(`plan "${plan.name}" has no spawnToken. Mint a long-lived (~1yr) token with \`CLAUDE_CONFIG_DIR=${plan.dir || '~/.claude-<acct>'} claude setup-token\` and add it to ~/.fleet-town/auth-plans.json as "spawnToken" for this plan. (A frozen ~1h access token would kill the agent on token rotation.)`);
       args.push('--env', `CLAUDE_CODE_OAUTH_TOKEN=${token}`);
-      recordPinned(token, plan.name); // so the badge names the account even after the token rotates
+      recordPinned(token, plan.name); // badge names the account; a setup-token never rotates
     }
   }
   return execFileSync(MAW, args, {
