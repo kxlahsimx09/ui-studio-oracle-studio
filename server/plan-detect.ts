@@ -5,6 +5,7 @@
 // process's life). No token in the env → the default logged-in account (no badge).
 import { readFileSync, existsSync } from 'node:fs';
 import { loadPlans, planAccessToken } from './usage';
+import { recalledPlan } from './pinned-accounts';
 
 // paneId → resolved plan label (or '' for default). Cleared when the pane's pid changes.
 const cache = new Map<string, { pid: number; label: string }>();
@@ -42,12 +43,14 @@ function envToken(pid: number): string | null {
   return null;
 }
 
-// Match an env token to a plan name (exact, against current plan tokens).
+// Match an env token to a plan name: exact (current plan tokens) first, then the
+// name we recorded at spawn (survives token rotation, e.g. a re-login), then a
+// generic 'pinned' if we never recorded it (a pre-recall-era or out-of-band spawn).
 function planForToken(token: string): string {
   for (const p of loadPlans()) {
     if (planAccessToken(p) === token) return p.name;
   }
-  return 'pinned'; // a pinned account whose token has since rotated — name unknown
+  return recalledPlan(token) || 'pinned';
 }
 
 /** Plan label for a pane (cached). '' = default logged-in account (no badge). */

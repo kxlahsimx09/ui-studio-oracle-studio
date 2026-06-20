@@ -6,6 +6,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { planById, planAccessToken, planIsPassthrough } from './usage';
+import { recordPinned } from './pinned-accounts';
 
 const HOME = homedir();
 const MAW = join(HOME, '.bun/bin/maw');
@@ -60,6 +61,7 @@ export function spawnAgent(role: string, slug: string, planId?: string): string 
       const token = planAccessToken(plan);
       if (!token) throw new Error(`no web-auth token for plan "${plan.name}" (open that account once to refresh)`);
       args.push('--env', `CLAUDE_CODE_OAUTH_TOKEN=${token}`);
+      recordPinned(token, plan.name); // so the badge names the account even after the token rotates
     }
   }
   return execFileSync(MAW, args, {
