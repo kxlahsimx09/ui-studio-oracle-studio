@@ -4,7 +4,7 @@
 // /proc, match it to a plan, and cache per pane (the token is fixed for the
 // process's life). No token in the env → the default logged-in account (no badge).
 import { readFileSync, existsSync } from 'node:fs';
-import { loadPlans, planAccessToken, planSpawnToken } from './usage';
+import { loadPlans, planAccessToken, planSpawnToken, planConfigDir } from './usage';
 import { recalledPlan } from './pinned-accounts';
 
 // paneId → resolved plan label (or '' for default). Cleared when the pane's pid changes.
@@ -33,14 +33,27 @@ function claudePid(rootPid: number): number | null {
   return null;
 }
 
-function envToken(pid: number): string | null {
+// Read the account-pinning env vars from a process: CLAUDE_CONFIG_DIR (controls
+// BILLING) and CLAUDE_CODE_OAUTH_TOKEN (legacy/badge-only). NUL-separated KEY=VAL.
+function envAccount(pid: number): { dir: string; token: string } {
+  const out = { dir: '', token: '' };
   try {
-    const raw = readFileSync(`/proc/${pid}/environ`, 'utf8'); // NUL-separated KEY=VAL
-    for (const kv of raw.split('\0')) {
-      if (kv.startsWith('CLAUDE_CODE_OAUTH_TOKEN=')) return kv.slice('CLAUDE_CODE_OAUTH_TOKEN='.length);
+    for (const kv of readFileSync(`/proc/${pid}/environ`, 'utf8').split('\0')) {
+      if (kv.startsWith('CLAUDE_CONFIG_DIR=')) out.dir = kv.slice('CLAUDE_CONFIG_DIR='.length);
+      else if (kv.startsWith('CLAUDE_CODE_OAUTH_TOKEN=')) out.token = kv.slice('CLAUDE_CODE_OAUTH_TOKEN='.length);
     }
   } catch { /* unreadable */ }
-  return null;
+  return out;
+}
+
+// A config-dir → plan name (the account it bills). The default ~/.claude (or no dir)
+// → '' (no badge). A known account dir → its plan name. An unknown dir → 'pinned'.
+function planForConfigDir(dir: string): string {
+  for (const p of loadPlans()) {
+    const pd = planConfigDir(p);
+    if (pd && pd === dir) return p.name;
+  }
+  return 'pinned';
 }
 
 // Match an env token to a plan name: exact (a plan's spawn token or current access
@@ -55,14 +68,20 @@ function planForToken(token: string): string {
   return recalledPlan(token) || 'pinned';
 }
 
-/** Plan label for a pane (cached). '' = default logged-in account (no badge). */
+/** Plan label for a pane (cached). '' = default logged-in account (no badge).
+ *  Prefers CLAUDE_CONFIG_DIR (the account that actually BILLS) over the env token
+ *  (badge-only); the config-dir is how agents are pinned since the billing fix. */
 export function planForPane(paneId: string, panePid: number): string {
   if (!panePid || !existsSync(`/proc/${panePid}`)) return '';
   const hit = cache.get(paneId);
   if (hit && hit.pid === panePid) return hit.label;
   const cpid = claudePid(panePid);
-  const token = cpid ? envToken(cpid) : null;
-  const label = token ? planForToken(token) : '';
+  const acct = cpid ? envAccount(cpid) : { dir: '', token: '' };
+  // A non-default config dir = the real billed account → name it. Else fall back to
+  // the legacy token badge. Default dir + no token = default account (no badge).
+  const isDefaultDir = !acct.dir || acct.dir === `${process.env.HOME}/.claude` || acct.dir.replace(/\/$/, '').endsWith('/.claude');
+  const label = !isDefaultDir ? planForConfigDir(acct.dir)
+    : acct.token ? planForToken(acct.token) : '';
   cache.set(paneId, { pid: panePid, label });
   return label;
 }
