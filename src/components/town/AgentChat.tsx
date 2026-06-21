@@ -5,7 +5,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { FleetAgent } from '../../lib/fleet';
 import { capturePane, fetchTranscript, sendToPane, sendKeyToPane, closePaneSession, fetchRoles, newAgent, addBookmark, type AgentPlan } from '../../lib/fleet';
-import { costumeFor, ctxColor } from '../../lib/role-costume';
+import { costumeFor, ctxColor, charIndexFor } from '../../lib/role-costume';
+import { variantFor, setVariant } from '../../lib/agent-variants';
+import { VariantPicker } from './VariantPicker';
 import { loadPresets, savePresets, PROMPT_MARK, type ChatPreset } from '../../lib/presets';
 import { PresetManager } from './PresetManager';
 import { LiveTestPanel } from './LiveTestPanel';
@@ -50,6 +52,7 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
   const [plans, setPlans] = useState<AgentPlan[]>([]);
   const [switching, setSwitching] = useState(false);
   const [bm, setBm] = useState<'idle' | 'saving' | 'done' | 'err'>('idle');
+  const [variantOpen, setVariantOpen] = useState(false);
 
   // Bookmark this agent's resume recipe (role+worktree+account) so it can be closed
   // now and respawned later with its context. Only resumable for maw-wake agents.
@@ -215,6 +218,9 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
               title="bookmark this agent → respawn it later (same worktree + account, with context) from the 🔖 panel">
               {bm === 'done' ? '🔖 saved' : bm === 'err' ? '🔖 failed' : bm === 'saving' ? '🔖 …' : '🔖 bookmark'}</button>
           )}
+          <button onClick={() => setVariantOpen(true)} className="ml-1 text-[10px] px-1.5 py-0.5 rounded"
+            style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }}
+            title="change this agent's sprite colour/variant on the map">🎨 variant</button>
           {isLiveTester && (
             <button onClick={() => setShowLiveTest(true)} className="ml-1 text-[10px] px-1.5 py-0.5 rounded"
               style={{ background: '#c084fc22', color: '#d9bbff', border: '1px solid #c084fc55' }}
@@ -303,6 +309,15 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
         />
       )}
       {showLiveTest && <LiveTestPanel onClose={() => setShowLiveTest(false)} />}
+      {variantOpen && (
+        <VariantPicker
+          label={`${cos.title}${agent.label && agent.label !== 'oracle' ? '·' + agent.label : ''}`}
+          current={variantFor(agent)}
+          roleDefault={charIndexFor(agent.role)}
+          onPick={(idx) => { setVariant(agent, idx); setVariantOpen(false); }}
+          onClose={() => setVariantOpen(false)}
+        />
+      )}
     </div>
   );
 }

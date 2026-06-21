@@ -27,3 +27,17 @@ export function bgPos(charIndex: number, dir: number, frame: number): string {
   const oy = Math.floor(charIndex / CHARS_PER_ROW) * CHAR_H + dir * TILE;
   return `${-ox * SCALE}px ${-oy * SCALE}px`;
 }
+
+/** Inline style to preview character `i`'s portrait (facing down, frame 0) at
+ *  `size` px — for the variant picker swatches. */
+export function swatchStyle(i: number, size: number): Record<string, string> {
+  const f = size / TILE;
+  const ox = (i % CHARS_PER_ROW) * CHAR_W * f;
+  const oy = Math.floor(i / CHARS_PER_ROW) * CHAR_H * f;
+  return {
+    backgroundImage: `url(${SHEET_URL})`,
+    backgroundSize: `${384 * f}px ${1024 * f}px`,
+    backgroundPosition: `${-ox}px ${-oy}px`,
+    imageRendering: 'pixelated',
+  };
+}
