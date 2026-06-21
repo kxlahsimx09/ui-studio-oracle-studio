@@ -295,19 +295,16 @@ export function PixelTown(
             }}
             title={`${a.windowName}\n${a.task || '—'}\n(drag to move · click to open session)`}
           >
-            {a.isOrchestrator && <span className="town-crown">👑</span>}
+            {/* Each on its OWN row so a long 🔑account never hides ctx% (the bug was
+                pinned agents only). Tag is bottom-anchored above the sprite, grows up. */}
             <span className="town-nametag" style={{ borderColor: cos.color }}>
-              {/* row 1: name (may truncate). row 2: ctx% + account — always visible. */}
+              {a.isOrchestrator && <span className="town-nametag-crown">👑</span>}
               <span className="town-nametag-row1">
                 <b style={{ color: cos.color }}>{cos.title}</b>
                 {a.label && a.label !== 'oracle' ? <span className="town-nametag-slug">·{a.label}</span> : null}
               </span>
-              {(a.ctxPct != null || a.plan) && (
-                <span className="town-nametag-row2">
-                  {a.ctxPct != null ? <span style={{ color: ctxColor(a.ctxPct) }}>{a.ctxPct}%</span> : null}
-                  {a.plan ? <span className="town-plan-badge" title={`Claude account: ${a.plan}`}>🔑{a.plan}</span> : null}
-                </span>
-              )}
+              {a.ctxPct != null ? <span className="town-nametag-ctx" style={{ color: ctxColor(a.ctxPct) }}>{a.ctxPct}%</span> : null}
+              {a.plan ? <span className="town-nametag-acct" title={`Claude account: ${a.plan}`}>🔑{a.plan}</span> : null}
             </span>
             {a.waiting ? (
               <span className="town-bubble town-bubble-wait" title="waiting for your input — click to answer the menu">🔔</span>
