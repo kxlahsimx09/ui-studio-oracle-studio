@@ -37,9 +37,10 @@
 
 /* Mobile: shrink the labels/badges so crowded zones stay readable on a phone. */
 @media (max-width: 520px) {
-  .town-nametag { font-size: 8px; padding: 0 2px; top: -11px; max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+  .town-nametag { font-size: 8px; padding: 0 2px; top: -23px; }
+  .town-nametag-row1 { max-width: 104px; }
   .town-bubble { font-size: 11px; top: 0; right: -4px; }
-  .town-crown { font-size: 11px; top: -22px; }
+  .town-crown { font-size: 11px; top: -33px; }
   .town-district-label { font-size: 12px; }
   .town-zone-label { font-size: 10px; }
 }
@@ -101,11 +102,16 @@
 .town-actor-offline { filter: grayscale(1) brightness(0.5); opacity: 0.5; }
 .town-actor-idle { filter: brightness(0.9); }
 .town-nametag {
-  position: absolute; top: -13px; left: 50%; transform: translateX(-50%);
-  white-space: nowrap; font-size: 9px; line-height: 1.4;
+  position: absolute; top: -26px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center;
+  font-size: 9px; line-height: 1.35;
   background: rgba(0,0,0,0.72); border: 1px solid; border-radius: 4px;
   padding: 0 4px; pointer-events: none;
 }
+/* row 1 = name; truncates when long so it never pushes row 2 off. */
+.town-nametag-row1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 132px; }
+/* row 2 = ctx% + account; short, on its own line so % context is ALWAYS shown. */
+.town-nametag-row2 { white-space: nowrap; font-size: 8.5px; }
 .town-nametag-slug { color: rgba(255,255,255,0.5); margin-left: 2px; }
 .town-plan-badge { margin-left: 3px; color: #c4b5fd; font-size: 8px; }
 .town-zzz-pixel {
@@ -149,7 +155,7 @@
   .town-bubble-work, .town-bubble-wait, .town-actor-wait, .town-wait-chip { animation: none; }
 }
 .town-crown {
-  position: absolute; top: -26px; left: 50%; transform: translateX(-50%);
+  position: absolute; top: -38px; left: 50%; transform: translateX(-50%);
   font-size: 13px; pointer-events: none; filter: drop-shadow(0 1px 2px #000);
 }
 

@@ -297,10 +297,17 @@ export function PixelTown(
           >
             {a.isOrchestrator && <span className="town-crown">👑</span>}
             <span className="town-nametag" style={{ borderColor: cos.color }}>
-              <b style={{ color: cos.color }}>{cos.title}</b>
-              {a.label && a.label !== 'oracle' ? <span className="town-nametag-slug">·{a.label}</span> : null}
-              {a.ctxPct != null ? <span className="town-nametag-slug" style={{ color: ctxColor(a.ctxPct) }}> {a.ctxPct}%</span> : null}
-              {a.plan ? <span className="town-plan-badge" title={`Claude account: ${a.plan}`}>🔑{a.plan}</span> : null}
+              {/* row 1: name (may truncate). row 2: ctx% + account — always visible. */}
+              <span className="town-nametag-row1">
+                <b style={{ color: cos.color }}>{cos.title}</b>
+                {a.label && a.label !== 'oracle' ? <span className="town-nametag-slug">·{a.label}</span> : null}
+              </span>
+              {(a.ctxPct != null || a.plan) && (
+                <span className="town-nametag-row2">
+                  {a.ctxPct != null ? <span style={{ color: ctxColor(a.ctxPct) }}>{a.ctxPct}%</span> : null}
+                  {a.plan ? <span className="town-plan-badge" title={`Claude account: ${a.plan}`}>🔑{a.plan}</span> : null}
+                </span>
+              )}
             </span>
             {a.waiting ? (
               <span className="town-bubble town-bubble-wait" title="waiting for your input — click to answer the menu">🔔</span>
