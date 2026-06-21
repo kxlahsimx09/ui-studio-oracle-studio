@@ -8,8 +8,8 @@ import type { FleetState, FleetAgent } from '../../lib/fleet';
 import type { LockState } from '../../lib/lock';
 import { groupTown } from '../../lib/town-group';
 import { buildStage } from '../../lib/town-stage';
-import { costumeFor, ctxColor, activityEmoji } from '../../lib/role-costume';
-import { variantFor } from '../../lib/agent-variants';
+import { costumeFor, charIndexFor, ctxColor, activityEmoji } from '../../lib/role-costume';
+import { agentHue } from '../../lib/agent-variants';
 import { SHEET_URL, SHEET_W, SHEET_H, SPRITE, bgPos } from '../../lib/sprite';
 import { buildProps } from '../../lib/town-props';
 import { loadZoneTextures, saveZoneTextures, textureById } from '../../lib/textures';
@@ -117,14 +117,14 @@ export function PixelTown(
       const home = place.home;
       let act = actors.current.get(a.id);
       if (!act) {
-        act = { id: a.id, x: rnd(home.x, home.x + home.w - SPRITE), y: rnd(home.y, home.y + home.h - SPRITE), tx: 0, ty: 0, dir: 0, frame: 0, frameT: 0, waitT: rnd(0, 800), status: a.status, charIndex: variantFor(a), home };
+        act = { id: a.id, x: rnd(home.x, home.x + home.w - SPRITE), y: rnd(home.y, home.y + home.h - SPRITE), tx: 0, ty: 0, dir: 0, frame: 0, frameT: 0, waitT: rnd(0, 800), status: a.status, charIndex: charIndexFor(a.role), home };
         pickTarget(act);
         actors.current.set(a.id, act);
       } else {
         // Zones rebuild every poll; only re-target when the rect VALUE changed,
         // else a stale target may sit outside the new home and pin the sprite to a wall.
         const moved = act.home.x !== home.x || act.home.y !== home.y || act.home.w !== home.w || act.home.h !== home.h;
-        act.status = a.status; act.home = home; act.charIndex = variantFor(a);
+        act.status = a.status; act.home = home; act.charIndex = charIndexFor(a.role);
         if (!act.pinned) {
           act.x = clamp(act.x, home.x, home.x + Math.max(0, home.w - SPRITE));
           act.y = clamp(act.y, home.y, home.y + Math.max(0, home.h - SPRITE));
@@ -278,6 +278,7 @@ export function PixelTown(
         const p = stage.placements[a.id];
         if (!p) return null;
         const cos = costumeFor(a.role);
+        const hue = agentHue(a); // per-agent colour override (null = role default)
         return (
           <div
             key={a.id}
@@ -291,7 +292,8 @@ export function PixelTown(
               cursor: 'grab', touchAction: 'none',
               backgroundImage: `url(${SHEET_URL})`,
               backgroundSize: `${SHEET_W}px ${SHEET_H}px`,
-              backgroundPosition: bgPos(variantFor(a), 0, 0),
+              backgroundPosition: bgPos(charIndexFor(a.role), 0, 0),
+              filter: hue != null ? `hue-rotate(${hue}deg)` : undefined,
               transform: `translate(${p.home.x}px, ${p.home.y}px)`,
             }}
             title={`${a.windowName}\n${a.task || '—'}\n(drag to move · click to open session)`}

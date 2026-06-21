@@ -6,7 +6,7 @@ import type { ReactNode } from 'react';
 import type { FleetAgent } from '../../lib/fleet';
 import { capturePane, fetchTranscript, sendToPane, sendKeyToPane, closePaneSession, fetchRoles, newAgent, addBookmark, type AgentPlan } from '../../lib/fleet';
 import { costumeFor, ctxColor, charIndexFor } from '../../lib/role-costume';
-import { variantFor, setVariant } from '../../lib/agent-variants';
+import { agentHue, setAgentHue } from '../../lib/agent-variants';
 import { VariantPicker } from './VariantPicker';
 import { loadPresets, savePresets, PROMPT_MARK, type ChatPreset } from '../../lib/presets';
 import { PresetManager } from './PresetManager';
@@ -312,9 +312,9 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
       {variantOpen && (
         <VariantPicker
           label={`${cos.title}${agent.label && agent.label !== 'oracle' ? '·' + agent.label : ''}`}
-          current={variantFor(agent)}
-          roleDefault={charIndexFor(agent.role)}
-          onPick={(idx) => { setVariant(agent, idx); setVariantOpen(false); }}
+          baseIndex={charIndexFor(agent.role)}
+          current={agentHue(agent)}
+          onPick={(deg) => { setAgentHue(agent, deg); setVariantOpen(false); }}
           onClose={() => setVariantOpen(false)}
         />
       )}
