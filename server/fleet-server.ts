@@ -19,6 +19,7 @@ import { listPlans } from './usage';
 import { handlePush, startNotifyLoop } from './push';
 import { getEnvStatus, startEnvProbe } from './env-probe';
 import { getUsageSnapshot, startUsage } from './usage';
+import { getLockState, releaseLock, setDisabled } from './lock-state';
 
 const DIST = join(import.meta.dir, '..', 'dist');
 const PORT = Number(process.env.FLEET_PORT || 8788);
@@ -79,6 +80,22 @@ const server = Bun.serve({
 
     if (p === '/__fleet/usage') {
       return Response.json(getUsageSnapshot(), { headers: { 'cache-control': 'no-store' } });
+    }
+
+    // Staging-env lock: GET reads holder/disabled; POST {action} lets the owner
+    // force-release or toggle the disable (no-lock) mode from the town UI.
+    if (p === '/__fleet/lock') {
+      if (req.method === 'POST') {
+        try {
+          const b = (await req.json()) as { action?: 'release' | 'disable' | 'enable' };
+          if (b.action === 'release') releaseLock();
+          else if (b.action === 'disable') setDisabled('staging', true);
+          else if (b.action === 'enable') setDisabled('staging', false);
+          else return Response.json({ error: 'unknown action' }, { status: 400 });
+          return Response.json({ ok: true, lock: getLockState() });
+        } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+      }
+      return Response.json(getLockState(), { headers: { 'cache-control': 'no-store' } });
     }
 
     if (p === '/__fleet/pane') {

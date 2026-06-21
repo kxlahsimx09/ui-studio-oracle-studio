@@ -13,6 +13,7 @@ import { getFleetState } from './fleet-probe';
 import { capturePane, sendToPane, sendKey, closePane } from './pane-io';
 import { transcriptFor } from './transcript';
 import { listRoles, spawnAgent } from './agents';
+import { getLockState, releaseLock, setDisabled } from './lock-state';
 
 const json = (res: ServerResponse, body: unknown, status = 200) => {
   res.statusCode = status;
@@ -69,6 +70,19 @@ export function fleetTownPlugin(): Plugin {
         try {
           const b = JSON.parse((await readBody(req)) || '{}');
           json(res, { ok: true, output: spawnAgent(b.role || '', b.slug || '') });
+        } catch (e) { json(res, { error: (e as Error).message }, 400); }
+      });
+      server.middlewares.use('/__fleet/lock', async (req, res) => {
+        try {
+          if (req.method === 'POST') {
+            const b = JSON.parse((await readBody(req)) || '{}');
+            if (b.action === 'release') releaseLock();
+            else if (b.action === 'disable') setDisabled('staging', true);
+            else if (b.action === 'enable') setDisabled('staging', false);
+            else return json(res, { error: 'unknown action' }, 400);
+            return json(res, { ok: true, lock: getLockState() });
+          }
+          json(res, getLockState());
         } catch (e) { json(res, { error: (e as Error).message }, 400); }
       });
     },
