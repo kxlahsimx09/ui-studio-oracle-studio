@@ -2,28 +2,48 @@
 // For a pane's cwd → newest Claude transcript in ~/.claude/projects/<encoded>/ →
 // the last assistant message's loaded tokens (input + cache_creation + cache_read)
 // vs the model's window. Returns REMAINING percent (0–100).
-import { readdirSync, statSync, openSync, readSync, closeSync } from 'node:fs';
+import { readdirSync, statSync, openSync, readSync, closeSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
-const PROJECTS = join(homedir(), '.claude/projects');
+const HOME = homedir();
 // Claude Code names project dirs by replacing '/' and '.' with '-' (encode_cwd).
 const encode = (cwd: string) => cwd.replace(/[/.]/g, '-');
+
+// Transcript roots: the default ~/.claude/projects AND every pinned-account dir
+// ~/.claude-<acct>/projects. An agent pinned via CLAUDE_CONFIG_DIR (the billing fix)
+// writes its transcript under its account dir, NOT ~/.claude — so ctx% must search
+// all of them or config-dir-pinned agents show no context. Cached (dirs rarely change).
+let rootsCache: { at: number; roots: string[] } | null = null;
+function projectRoots(): string[] {
+  if (rootsCache && Date.now() - rootsCache.at < 30_000) return rootsCache.roots;
+  const roots = [join(HOME, '.claude', 'projects')];
+  try {
+    for (const e of readdirSync(HOME)) {
+      if (e.startsWith('.claude-')) { const p = join(HOME, e, 'projects'); if (existsSync(p)) roots.push(p); }
+    }
+  } catch { /* ignore */ }
+  rootsCache = { at: Date.now(), roots };
+  return roots;
+}
 
 export interface CtxResult { pct: number; tokens: number; ctxMax: number; model: string }
 const cache = new Map<string, { mtimeMs: number; res: CtxResult | null }>();
 
 export function newestJsonl(cwd: string): string | null {
-  const dir = join(PROJECTS, encode(cwd));
+  const enc = encode(cwd);
   let best: { path: string; m: number } | null = null;
-  try {
-    for (const f of readdirSync(dir)) {
-      if (!f.endsWith('.jsonl')) continue;
-      const p = join(dir, f);
-      const m = statSync(p).mtimeMs;
-      if (!best || m > best.m) best = { path: p, m };
-    }
-  } catch { return null; }
+  for (const root of projectRoots()) {
+    const dir = join(root, enc);
+    try {
+      for (const f of readdirSync(dir)) {
+        if (!f.endsWith('.jsonl')) continue;
+        const p = join(dir, f);
+        const m = statSync(p).mtimeMs;
+        if (!best || m > best.m) best = { path: p, m };  // newest across all config dirs
+      }
+    } catch { /* this root has no dir for the cwd — try the next */ }
+  }
   return best?.path ?? null;
 }
 
