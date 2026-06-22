@@ -137,6 +137,17 @@ export async function switchAgentAccount(paneId: string, planId: string): Promis
   if (!res.ok || j.error) throw new Error(j.error || `switch ${res.status}`);
 }
 
+/** Carry the session over to a FRESH clean session (same agent), briefed via a file
+ *  the old session writes — for when context runs low. Server does the in-place swap. */
+export async function carryOverSession(paneId: string): Promise<void> {
+  const res = await fetch('/__fleet/carry-over', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ paneId }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || j.error) throw new Error(j.error || `carry-over ${res.status}`);
+}
+
 /** Roles wakeable via `maw wake` (for the New Agent picker). */
 export interface AgentPlan { id: string; name: string }
 export async function fetchRoles(): Promise<{ roles: string[]; plans: AgentPlan[] }> {

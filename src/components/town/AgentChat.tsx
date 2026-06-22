@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { FleetAgent } from '../../lib/fleet';
-import { capturePane, fetchTranscript, sendToPane, sendKeyToPane, closePaneSession, fetchRoles, switchAgentAccount, addBookmark, type AgentPlan } from '../../lib/fleet';
+import { capturePane, fetchTranscript, sendToPane, sendKeyToPane, closePaneSession, fetchRoles, switchAgentAccount, carryOverSession, addBookmark, type AgentPlan } from '../../lib/fleet';
 import { costumeFor, ctxColor, charIndexFor } from '../../lib/role-costume';
 import { agentHue, setAgentHue } from '../../lib/agent-variants';
 import { VariantPicker } from './VariantPicker';
@@ -53,6 +53,17 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
   const [switching, setSwitching] = useState(false);
   const [bm, setBm] = useState<'idle' | 'saving' | 'done' | 'err'>('idle');
   const [variantOpen, setVariantOpen] = useState(false);
+  const [carrying, setCarrying] = useState(false);
+
+  // Carry over to a fresh clean session (the old one writes a brief file; the fresh
+  // agent reads it + continues). For when context runs low. ~minute, runs server-side.
+  const doCarryOver = async () => {
+    if (carrying) return;
+    if (!window.confirm('Carry over to a FRESH session?\nThe current agent writes a handoff brief, then a new clean-context agent takes over and continues from it. Takes ~a minute.')) return;
+    setCarrying(true); setErr(null);
+    try { await carryOverSession(agent.paneId); onClose(); }
+    catch (e) { setErr((e as Error).message); setCarrying(false); }
+  };
 
   // Bookmark this agent's resume recipe (role+worktree+account) so it can be closed
   // now and respawned later with its context. Only resumable for maw-wake agents.
@@ -220,6 +231,9 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
               title="bookmark this agent → respawn it later (same worktree + account, with context) from the 🔖 panel">
               {bm === 'done' ? '🔖 saved' : bm === 'err' ? '🔖 failed' : bm === 'saving' ? '🔖 …' : '🔖 bookmark'}</button>
           )}
+          <button onClick={doCarryOver} disabled={carrying} className="ml-1 text-[10px] px-1.5 py-0.5 rounded disabled:opacity-40"
+            style={{ background: '#22d3ee22', color: '#67e8f9', border: '1px solid #22d3ee55' }}
+            title="context low? hand off to a fresh clean-context agent, briefed from this session">{carrying ? '↪ …' : '↪ carry over'}</button>
           <button onClick={() => setVariantOpen(true)} className="ml-1 text-[10px] px-1.5 py-0.5 rounded"
             style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }}
             title="change this agent's sprite colour/variant on the map">🎨 variant</button>
