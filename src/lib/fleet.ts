@@ -126,6 +126,17 @@ export async function closePaneSession(paneId: string): Promise<void> {
   if (!res.ok || j.error) throw new Error(j.error || `close ${res.status}`);
 }
 
+/** Switch a running agent to another Claude account IN PLACE (keeps its session +
+ *  context; server kills→relaunches `claude --resume` under the new config dir). */
+export async function switchAgentAccount(paneId: string, planId: string): Promise<void> {
+  const res = await fetch('/__fleet/switch-account', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ paneId, planId }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok || j.error) throw new Error(j.error || `switch ${res.status}`);
+}
+
 /** Roles wakeable via `maw wake` (for the New Agent picker). */
 export interface AgentPlan { id: string; name: string }
 export async function fetchRoles(): Promise<{ roles: string[]; plans: AgentPlan[] }> {
