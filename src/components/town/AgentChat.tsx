@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { FleetAgent } from '../../lib/fleet';
-import { capturePane, fetchTranscript, sendToPane, sendKeyToPane, closePaneSession, fetchRoles, newAgent, addBookmark, type AgentPlan } from '../../lib/fleet';
+import { capturePane, fetchTranscript, sendToPane, sendKeyToPane, closePaneSession, fetchRoles, switchAgentAccount, addBookmark, type AgentPlan } from '../../lib/fleet';
 import { costumeFor, ctxColor, charIndexFor } from '../../lib/role-costume';
 import { agentHue, setAgentHue } from '../../lib/agent-variants';
 import { VariantPicker } from './VariantPicker';
@@ -68,13 +68,15 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
 
   // Switch this agent to another Claude account: respawn role+slug on the new
   // account (maw reuses the worktree), then close the old pane. Ends this session.
+  // Switch account IN PLACE: the server kills + relaunches `claude --resume` under the
+  // new config dir (keeps the session + context), instead of fresh-spawn-and-close
+  // (which lost context and could orphan the agent).
   const switchPlan = async (planId: string) => {
-    if (!slug || switching) return;
+    if (switching) return;
     setSwitching(true); setErr(null);
     try {
-      await newAgent(agent.role, slug, planId);   // fresh session on the chosen account
-      await closePaneSession(agent.paneId);        // retire the old pane
-      onClose();
+      await switchAgentAccount(agent.paneId, planId);
+      onClose(); // resumes in the same pane on the new account; reopen to continue
     } catch (e) { setErr((e as Error).message); setSwitching(false); }
   };
   const preRef = useRef<HTMLPreElement>(null);
@@ -197,10 +199,10 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
             <select
               value=""
               disabled={switching}
-              onChange={(e) => { if (e.target.value && confirm(`Switch ${agent.role}·${slug} to ${plans.find((p) => p.id === e.target.value)?.name}?\nThis ends the current session and respawns on that account.`)) switchPlan(e.target.value); }}
+              onChange={(e) => { if (e.target.value && confirm(`Switch ${agent.role}·${slug} to ${plans.find((p) => p.id === e.target.value)?.name}?\nKeeps the session + context (resumes in place on that account).`)) switchPlan(e.target.value); }}
               className={`${agent.ctxPct == null ? 'ml-auto' : 'ml-1'} text-[10px] px-1 py-0.5 rounded`}
               style={{ background: '#a78bfa18', color: '#c4b5fd', border: '1px solid #a78bfa44' }}
-              title="switch this agent to another Claude account (respawns)"
+              title="switch this agent to another Claude account (keeps context, resumes in place)"
             >
               <option value="">{switching ? 'switching…' : `🔑 ${agent.plan || 'account'}`}</option>
               {plans.map((pl) => <option key={pl.id} value={pl.id}>→ {pl.name}</option>)}

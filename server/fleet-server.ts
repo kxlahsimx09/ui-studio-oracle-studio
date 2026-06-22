@@ -15,6 +15,7 @@ import { getFleetState } from './fleet-probe';
 import { capturePane, sendToPane, sendKey, closePane } from './pane-io';
 import { transcriptFor } from './transcript';
 import { listRoles, spawnAgent } from './agents';
+import { switchAccount } from './account-switch';
 import { listBookmarks, addBookmark, removeBookmark, respawnBookmark } from './bookmarks';
 import { listPlans } from './usage';
 import { handlePush, startNotifyLoop } from './push';
@@ -155,6 +156,12 @@ const server = Bun.serve({
         const b = (await req.json()) as { id?: string };
         closePane(b.id || '');
         return Response.json({ ok: true });
+      } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    }
+    if (p === '/__fleet/switch-account' && req.method === 'POST') {
+      try {
+        const b = (await req.json()) as { paneId?: string; planId?: string };
+        return Response.json(await switchAccount(b.paneId || '', b.planId || ''));
       } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
     }
     if (p === '/__fleet/bookmarks') {
