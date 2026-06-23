@@ -58,13 +58,27 @@ export function PixelTown(
   const linkLabelEls = useRef<Map<string, HTMLDivElement>>(new Map());
   const linksRef = useRef<AgentLink[]>(links);
   useEffect(() => { linksRef.current = links; }, [links]);
+  // Live agents, for the rAF: links resolve their endpoints by the STABLE tmux pane
+  // id (%NN, never reused), not the positional `id` (session:window.pane) — that
+  // slot gets reused when an agent disappears, which made arrows jump to whoever
+  // moved into the freed id.
+  const agentsRef = useRef(state.agents);
+  useEffect(() => { agentsRef.current = state.agents; }, [state.agents]);
   const [pending, setPending] = useState<PendingLink | null>(null);
+  const labelFor = (a: FleetAgent) => {
+    const title = costumeFor(a.role).title;
+    return a.label && a.label !== 'oracle' ? `${title}·${a.label}` : title;
+  };
   // Display label for an agent id (costume title · slug) — used in the link editor.
   const nameOf = (id: string) => {
     const a = state.agents.find((x) => x.id === id);
-    if (!a) return id;
-    const title = costumeFor(a.role).title;
-    return a.label && a.label !== 'oracle' ? `${title}·${a.label}` : title;
+    return a ? labelFor(a) : id;
+  };
+  // Same, but matched on the stable pane id (for editing a saved link whose
+  // positional id may have changed since it was drawn).
+  const nameOfPane = (pane: string, fallback: string) => {
+    const a = state.agents.find((x) => x.paneId === pane);
+    return a ? labelFor(a) : fallback;
   };
   // Animated decorations (campfire/windmill/sparkle): the rAF cycles their frames.
   const propEls = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -116,7 +130,11 @@ export function PixelTown(
       const px = e.clientX - r.left, py = e.clientY - r.top;
       const boxes = [...actors.current.values()].map((ac) => ({ id: ac.id, x: ac.x, y: ac.y, size: SPRITE }));
       const targetId = hitTestAgent(boxes, px, py, a.id);
-      if (targetId) setPending({ from: a.id, to: targetId, fromLabel: nameOf(a.id), toLabel: nameOf(targetId), note: '' });
+      const target = targetId ? state.agents.find((x) => x.id === targetId) : null;
+      if (target) setPending({
+        from: a.id, to: target.id, fromPane: a.paneId, toPane: target.paneId,
+        fromLabel: nameOf(a.id), toLabel: nameOf(target.id), note: '',
+      });
     }
     // Dropped after a drag: don't freeze it — pause where it landed, then wander on.
     const act = actors.current.get(a.id);
@@ -210,10 +228,19 @@ export function PixelTown(
       }
       // Dependency arrows: anchor each line + note pill to the two live sprite
       // centres; the arrow head stops at B's edge so it isn't hidden by the sprite.
+      // Resolve a link endpoint to its live sprite by the STABLE pane id; if no
+      // agent currently holds that pane the endpoint is gone → hide (don't fall
+      // back to the positional id, or a reused id would retarget the arrow).
+      const resolve = (id: string, pane: string) => {
+        const ag = pane
+          ? agentsRef.current.find((a) => a.paneId === pane)
+          : agentsRef.current.find((a) => a.id === id);
+        return ag ? actors.current.get(ag.id) : undefined;
+      };
       for (const lk of linksRef.current) {
         const line = linkLineEls.current.get(lk.id);
         const label = linkLabelEls.current.get(lk.id);
-        const fa = actors.current.get(lk.from), fb = actors.current.get(lk.to);
+        const fa = resolve(lk.from, lk.fromPane), fb = resolve(lk.to, lk.toPane);
         if (!fa || !fb) { if (line) line.style.display = 'none'; if (label) label.style.display = 'none'; continue; }
         const x1 = fa.x + SPRITE / 2, y1 = fa.y + SPRITE / 2;
         const cx = fb.x + SPRITE / 2, cy = fb.y + SPRITE / 2;
@@ -267,7 +294,7 @@ export function PixelTown(
   const submitLink = async () => {
     const p = pending; if (!p) return;
     setPending(null);
-    try { await saveLink(p.from, p.to, p.note); reloadLinks?.(); } catch { /* keep the map quiet */ }
+    try { await saveLink(p.from, p.to, p.note, p.fromPane, p.toPane); reloadLinks?.(); } catch { /* keep the map quiet */ }
   };
   const removeLinkNow = async () => {
     const p = pending; if (!p?.editingId) return;
@@ -275,7 +302,11 @@ export function PixelTown(
     try { await deleteLink(p.editingId); reloadLinks?.(); } catch { /* keep the map quiet */ }
   };
   const editLink = (l: AgentLink) =>
-    setPending({ from: l.from, to: l.to, fromLabel: nameOf(l.from), toLabel: nameOf(l.to), note: l.note, editingId: l.id });
+    setPending({
+      from: l.from, to: l.to, fromPane: l.fromPane, toPane: l.toPane,
+      fromLabel: nameOfPane(l.fromPane, nameOf(l.from)), toLabel: nameOfPane(l.toPane, nameOf(l.to)),
+      note: l.note, editingId: l.id,
+    });
 
   return (
     <div ref={wrapRef} className="w-full">

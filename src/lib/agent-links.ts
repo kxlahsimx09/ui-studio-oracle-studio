@@ -5,8 +5,10 @@ import { useEffect, useRef, useState } from 'react';
 
 export interface AgentLink {
   id: string;
-  from: string;
+  from: string;          // positional agent id at draw time (display / legacy)
   to: string;
+  fromPane: string;      // stable tmux pane id (%NN) — the identity the map resolves by
+  toPane: string;
   note: string;
   savedAt: number;
 }
@@ -20,10 +22,10 @@ export async function fetchLinks(signal?: AbortSignal): Promise<AgentLink[]> {
   return j.links ?? [];
 }
 
-export async function saveLink(from: string, to: string, note: string): Promise<void> {
+export async function saveLink(from: string, to: string, note: string, fromPane = '', toPane = ''): Promise<void> {
   const res = await fetch(ENDPOINT, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ from, to, note }),
+    body: JSON.stringify({ from, to, note, fromPane, toPane }),
   });
   const j = await res.json().catch(() => ({}));
   if (!res.ok || j.error) throw new Error(j.error || `links ${res.status}`);

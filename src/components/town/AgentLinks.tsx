@@ -7,6 +7,7 @@ import type { AgentLink } from '../../lib/agent-links';
 
 export interface PendingLink {
   from: string; to: string;
+  fromPane: string; toPane: string; // stable tmux pane ids — the real identity
   fromLabel: string; toLabel: string;
   note: string;
   editingId?: string; // set when editing an existing link (Save replaces, Delete removes)
