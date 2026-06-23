@@ -15,12 +15,12 @@ import { PixelTown } from '../components/town/PixelTown';
 import { AgentChat } from '../components/town/AgentChat';
 import { NewAgent } from '../components/town/NewAgent';
 import { Notifications } from '../components/town/Notifications';
-import { StagingBand } from '../components/town/StagingBand';
 import { UsagePanel } from '../components/town/UsagePanel';
 import { LockPanel } from '../components/town/LockPanel';
 import { BookmarksPanel } from '../components/town/BookmarksPanel';
 import { DeployPanel } from '../components/town/DeployPanel';
 import { SyncHud } from '../components/town/SyncHud';
+import { useVerify } from '../lib/verify';
 import { useDeployRunning } from '../lib/deploy';
 import './Town.css';
 
@@ -52,6 +52,8 @@ export function Town() {
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [showDeploy, setShowDeploy] = useState(false);
   const deploying = useDeployRunning();
+  const verify = useVerify();
+  const stagingOutOfSync = !!verify.state?.checks?.some((c) => c.state === 'stale' || c.state === 'fail');
   const { links, reload: reloadLinks } = useAgentLinks(4000);
   const { notes, reload: reloadNotes } = useAgentNotes(4000);
   const polledLock = useLock(4000);
@@ -145,7 +147,7 @@ export function Town() {
         </div>
       )}
 
-      {view === 'map' && <PixelTown state={state} onSelect={openAgent} lock={lock} onLockClick={() => setShowLock(true)} links={links} reloadLinks={reloadLinks} notes={notes} reloadNotes={reloadNotes} />}
+      {view === 'map' && <PixelTown state={state} onSelect={openAgent} lock={lock} onLockClick={() => setShowLock(true)} links={links} reloadLinks={reloadLinks} notes={notes} reloadNotes={reloadNotes} stagingOutOfSync={stagingOutOfSync} />}
 
       {view === 'list' && (
         <div className="flex flex-col gap-3">
@@ -167,8 +169,7 @@ export function Town() {
         <p className="text-center text-white/40 py-12">no agent panes found in tmux.</p>
       )}
 
-      <StagingBand />
-      <SyncHud />
+      <SyncHud state={verify.state} refresh={verify.refresh} />
     </div>
   );
 }

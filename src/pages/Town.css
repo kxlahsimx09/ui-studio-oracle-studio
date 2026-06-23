@@ -206,6 +206,13 @@
 .town-actor-calm.town-actor-wait { animation: none; }
 .town-actor-calm .town-bubble-wait,
 .town-actor-calm .town-bubble-work { animation: none; }
+/* The town statue alarms (red→amber glow pulse) while staging is OUT OF SYNC. */
+.town-deco-alarm { pointer-events: auto; animation: town-statue-alarm 1.4s ease-in-out infinite; }
+@keyframes town-statue-alarm {
+  0%, 100% { filter: drop-shadow(0 0 3px rgba(248,113,113,0.45)); }
+  50%      { filter: drop-shadow(0 0 12px rgba(248,113,113,0.95)) drop-shadow(0 0 22px rgba(251,146,60,0.6)); }
+}
+@media (prefers-reduced-motion: reduce) { .town-deco-alarm { animation: none; filter: drop-shadow(0 0 9px rgba(248,113,113,0.85)); } }
 /* Bottom-anchored above the sprite + flex column → it grows UPWARD and handles a
    variable number of rows (crown / name / ctx% / account) cleanly. Each field is
    its own row, so a long 🔑account can never push ctx% off (the pinned-agent bug). */

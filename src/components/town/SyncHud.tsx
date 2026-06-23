@@ -3,7 +3,7 @@
 // sync (STALE) or failing, amber = warn, grey = unknown/skipped. Auto-refreshes
 // ~every minute; ⟳ forces a run now.
 import { useState } from 'react';
-import { useVerify, type CheckState } from '../../lib/verify';
+import type { CheckState, VerifyState } from '../../lib/verify';
 
 const DOT: Record<CheckState, string> = {
   ok: '#4ade80', stale: '#f87171', fail: '#f87171', warn: '#fbbf24', unknown: '#64748b', skipped: '#475569',
@@ -16,8 +16,7 @@ function ago(ts?: number): string {
   return s < 60 ? `${s}s ago` : `${Math.floor(s / 60)}m ago`;
 }
 
-export function SyncHud() {
-  const { state, refresh } = useVerify();
+export function SyncHud({ state, refresh }: { state: VerifyState | null; refresh: () => void }) {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(KEY) === '1');
   const setCol = (v: boolean) => { setCollapsed(v); localStorage.setItem(KEY, v ? '1' : '0'); };
 
