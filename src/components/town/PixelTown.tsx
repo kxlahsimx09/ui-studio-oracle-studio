@@ -18,6 +18,9 @@ import { AgentLinks } from './AgentLinks';
 import type { PendingLink } from './AgentLinks';
 import { saveLink, deleteLink, hitTestAgent } from '../../lib/agent-links';
 import type { AgentLink } from '../../lib/agent-links';
+import { AgentNoteEditor } from './AgentNoteEditor';
+import type { NotePending } from './AgentNoteEditor';
+import { saveNote, deleteNote } from '../../lib/agent-notes';
 
 interface Actor {
   id: string; x: number; y: number; tx: number; ty: number;
@@ -37,9 +40,10 @@ function pickTarget(a: Actor) {
 }
 
 export function PixelTown(
-  { state, onSelect, lock, onLockClick, links = [], reloadLinks }:
+  { state, onSelect, lock, onLockClick, links = [], reloadLinks, notes = {}, reloadNotes }:
   { state: FleetState; onSelect: (a: FleetAgent) => void; lock?: LockState | null; onLockClick?: () => void;
-    links?: AgentLink[]; reloadLinks?: () => void },
+    links?: AgentLink[]; reloadLinks?: () => void;
+    notes?: Record<string, string>; reloadNotes?: () => void },
 ) {
   const districts = useMemo(() => groupTown(state), [state]);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -65,6 +69,7 @@ export function PixelTown(
   const agentsRef = useRef(state.agents);
   useEffect(() => { agentsRef.current = state.agents; }, [state.agents]);
   const [pending, setPending] = useState<PendingLink | null>(null);
+  const [notePending, setNotePending] = useState<NotePending | null>(null);
   const labelFor = (a: FleetAgent) => {
     const title = costumeFor(a.role).title;
     return a.label && a.label !== 'oracle' ? `${title}·${a.label}` : title;
@@ -308,6 +313,20 @@ export function PixelTown(
       note: l.note, editingId: l.id,
     });
 
+  // Per-agent note: click the nametag → edit what the agent is doing (blank = delete).
+  const openNote = (a: FleetAgent) =>
+    setNotePending({ pane: a.paneId, label: labelFor(a), note: notes[a.paneId] || '' });
+  const saveNoteNow = async (text: string) => {
+    const p = notePending; if (!p) return;
+    setNotePending(null);
+    try { await saveNote(p.pane, text); reloadNotes?.(); } catch { /* keep the map quiet */ }
+  };
+  const removeNoteNow = async () => {
+    const p = notePending; if (!p) return;
+    setNotePending(null);
+    try { await deleteNote(p.pane); reloadNotes?.(); } catch { /* keep the map quiet */ }
+  };
+
   return (
     <div ref={wrapRef} className="w-full">
     <div ref={stageRef} className="town-stage" style={{ width: stage.width, height: stage.height }}>
@@ -404,7 +423,10 @@ export function PixelTown(
           >
             {/* Each on its OWN row so a long 🔑account never hides ctx% (the bug was
                 pinned agents only). Tag is bottom-anchored above the sprite, grows up. */}
-            <span className="town-nametag" style={{ borderColor: cos.color }}>
+            <span className="town-nametag town-nametag-click" style={{ borderColor: cos.color }}
+              title="click to add / edit a note"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); openNote(a); }}>
               {a.isOrchestrator && <span className="town-nametag-crown">👑</span>}
               <span className="town-nametag-row1">
                 <b style={{ color: cos.color }}>{cos.title}</b>
@@ -412,6 +434,7 @@ export function PixelTown(
               </span>
               {a.ctxPct != null ? <span className="town-nametag-ctx" style={{ color: ctxColor(a.ctxPct) }}>{a.ctxPct}%</span> : null}
               {a.plan ? <span className="town-nametag-acct" title={`Claude account: ${a.plan}`}>🔑{a.plan}</span> : null}
+              {notes[a.paneId] ? <span className="town-nametag-note">📝 {notes[a.paneId]}</span> : null}
             </span>
             {a.waiting ? (
               <span className="town-bubble town-bubble-wait" title="waiting for your input — click to answer the menu">🔔</span>
@@ -444,6 +467,9 @@ export function PixelTown(
         }}
         onClose={() => setPicking(null)}
       />
+    )}
+    {notePending && (
+      <AgentNoteEditor pending={notePending} onSave={saveNoteNow} onRemove={removeNoteNow} onCancel={() => setNotePending(null)} />
     )}
     </div>
   );

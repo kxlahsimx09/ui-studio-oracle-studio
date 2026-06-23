@@ -20,6 +20,7 @@ import { carryOver } from './carry-over';
 import { listBookmarks, addBookmark, removeBookmark, respawnBookmark } from './bookmarks';
 import { listLinks, addLink, removeLink } from './agent-links';
 import { getDeploy, startDeploy, startPullMain, cancelDeploy } from './deploy';
+import { listNotes, setNote, removeNote } from './agent-notes';
 import { listPlans } from './usage';
 import { handlePush, startNotifyLoop } from './push';
 import { handleTelegram } from './telegram';
@@ -212,6 +213,20 @@ const server = Bun.serve({
           if (b.action === 'pull-main') { const r = startPullMain(); return Response.json(r, { status: 'error' in r ? 400 : 200 }); }
           const r = startDeploy({ mode: b.mode, dry: b.dry, pull: b.pull });
           return Response.json(r, { status: 'error' in r ? 400 : 200 });
+        }
+      } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    }
+    if (p === '/__fleet/agent-notes') {
+      try {
+        if (req.method === 'GET') return Response.json({ notes: listNotes() });
+        if (req.method === 'POST') {
+          const b = (await req.json()) as Record<string, string>;
+          return Response.json({ ok: true, note: setNote({ ...b, savedAt: Date.now() }) });
+        }
+        if (req.method === 'DELETE') {
+          const b = (await req.json()) as { pane?: string };
+          removeNote(b.pane || '');
+          return Response.json({ ok: true });
         }
       } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
     }
