@@ -64,12 +64,15 @@ export function PixelTown(
   const linkLineEls = useRef<Map<string, SVGLineElement>>(new Map());
   const linkLabelEls = useRef<Map<string, HTMLDivElement>>(new Map());
   const linksRef = useRef<AgentLink[]>(links);
-  // Panes at an ARROWHEAD (the depended-on `to` side) — used to gate the stall
-  // aura. The `from` (tail) is the waiter and is meant to be idle, so it's excluded.
+  // Panes at an ARROWHEAD (`to`) get the stall aura; panes at the TAIL (`from`)
+  // are the waiters — they're meant to be idle, so they get NO aura and their
+  // native waiting/working pulse is calmed (the link already says they're waiting).
   const linkTargetPanesRef = useRef<Set<string>>(new Set());
+  const linkSourcePanesRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     linksRef.current = links;
     linkTargetPanesRef.current = new Set(links.map((l) => l.toPane).filter(Boolean));
+    linkSourcePanesRef.current = new Set(links.map((l) => l.fromPane).filter(Boolean));
   }, [links]);
   // Live agents, for the rAF: links resolve their endpoints by the STABLE tmux pane
   // id (%NN, never reused), not the positional `id` (session:window.pane) — that
@@ -248,6 +251,8 @@ export function PixelTown(
         const stalled = act.idleSince != null && nowMs - act.idleSince > IDLE_AURA_MS
           && act.paneId != null && linkTargetPanesRef.current.has(act.paneId);
         el.classList.toggle('town-actor-aura', stalled);
+        // A link SOURCE (waiter) shouldn't blink — calm its glow/bubble pulse.
+        el.classList.toggle('town-actor-calm', act.paneId != null && linkSourcePanesRef.current.has(act.paneId));
       }
       // Dependency arrows: anchor each line + note pill to the two live sprite
       // centres; the arrow head stops at B's edge so it isn't hidden by the sprite.

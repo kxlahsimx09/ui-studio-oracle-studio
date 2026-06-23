@@ -201,6 +201,11 @@
   50%      { opacity: 1;   transform: scale(1.1); }
 }
 @media (prefers-reduced-motion: reduce) { .town-actor-aura::after { animation: none; opacity: 0.8; } }
+/* A link SOURCE (the waiter) is calmed — keep the static glyph, stop the blink:
+   the arrow already shows it's waiting, so the pulsing is just noise. */
+.town-actor-calm.town-actor-wait { animation: none; }
+.town-actor-calm .town-bubble-wait,
+.town-actor-calm .town-bubble-work { animation: none; }
 /* Bottom-anchored above the sprite + flex column → it grows UPWARD and handles a
    variable number of rows (crown / name / ctx% / account) cleanly. Each field is
    its own row, so a long 🔑account can never push ctx% off (the pinned-agent bug). */
