@@ -35,9 +35,11 @@ const LABELS: Record<string, string> = {
   'edge-funcs': 'Edge functions',
   'cf-worker': 'CF worker',
   'admin-ui': 'Admin UI · currency',
+  'bank-bot': 'Bank-bot · currency',       // stack-freshness currency leg
   'deposits-create': 'deposits-create EF',
   'clock/reset rpcs': 'Clock / reset RPCs',
   'admin-ui alias': 'Admin UI · alias',
+  'bank-bot fleet': 'Bank-bot · fleet',    // verify readiness: last deploy.yml roll
 };
 
 function classify(v: string): CheckState {
