@@ -62,7 +62,9 @@ function parse(log: string[]): { checks: VerifyCheck[]; verdict?: string } {
     const m = line.match(/^\s*([A-Za-z0-9/_ -]+?)\s*:\s*(.+?)\s*$/);
     if (!m) continue;
     const key = m[1].trim().toLowerCase();
-    const name = LABELS[key];
+    // mock-portal probes are dynamic per bank ("mock-portal SCB", "mock-portal KTB").
+    const name = LABELS[key]
+      ?? (key.startsWith('mock-portal ') ? `Mock portal · ${key.slice(12).toUpperCase()}` : undefined);
     if (!name) continue;
     map.set(name, { label: name, state: classify(m[2]), detail: m[2].trim() }); // last line wins
   }
