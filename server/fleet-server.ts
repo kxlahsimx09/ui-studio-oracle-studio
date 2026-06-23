@@ -18,6 +18,7 @@ import { listRoles, spawnAgent } from './agents';
 import { switchAccount } from './account-switch';
 import { carryOver } from './carry-over';
 import { listBookmarks, addBookmark, removeBookmark, respawnBookmark } from './bookmarks';
+import { listLinks, addLink, removeLink } from './agent-links';
 import { listPlans } from './usage';
 import { handlePush, startNotifyLoop } from './push';
 import { handleTelegram } from './telegram';
@@ -181,6 +182,20 @@ const server = Bun.serve({
         if (req.method === 'DELETE') {
           const b = (await req.json()) as { id?: string };
           removeBookmark(b.id || '');
+          return Response.json({ ok: true });
+        }
+      } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    }
+    if (p === '/__fleet/links') {
+      try {
+        if (req.method === 'GET') return Response.json({ links: listLinks() });
+        if (req.method === 'POST') {
+          const b = (await req.json()) as Record<string, string>;
+          return Response.json({ ok: true, link: addLink({ ...b, savedAt: Date.now() }) });
+        }
+        if (req.method === 'DELETE') {
+          const b = (await req.json()) as { id?: string };
+          removeLink(b.id || '');
           return Response.json({ ok: true });
         }
       } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }

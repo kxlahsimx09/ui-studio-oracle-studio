@@ -7,6 +7,7 @@ import { useFleet } from '../lib/fleet';
 import type { FleetAgent } from '../lib/fleet';
 import { useLock } from '../lib/lock';
 import type { LockState } from '../lib/lock';
+import { useAgentLinks } from '../lib/agent-links';
 import { groupTown } from '../lib/town-group';
 import { District } from '../components/town/District';
 import { PixelTown } from '../components/town/PixelTown';
@@ -45,6 +46,7 @@ export function Town() {
   const [showUsage, setShowUsage] = useState(false);
   const [showLock, setShowLock] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
+  const { links, reload: reloadLinks } = useAgentLinks(4000);
   const polledLock = useLock(4000);
   const [lock, setLock] = useState<LockState | null>(null);
   useEffect(() => { if (polledLock) setLock(polledLock); }, [polledLock]);
@@ -128,7 +130,7 @@ export function Town() {
         </div>
       )}
 
-      {view === 'map' && <PixelTown state={state} onSelect={openAgent} lock={lock} onLockClick={() => setShowLock(true)} />}
+      {view === 'map' && <PixelTown state={state} onSelect={openAgent} lock={lock} onLockClick={() => setShowLock(true)} links={links} reloadLinks={reloadLinks} />}
 
       {view === 'list' && (
         <div className="flex flex-col gap-3">

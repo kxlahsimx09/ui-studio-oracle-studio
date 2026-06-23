@@ -14,6 +14,10 @@ import { SHEET_URL, SHEET_W, SHEET_H, SPRITE, bgPos } from '../../lib/sprite';
 import { buildProps } from '../../lib/town-props';
 import { loadZoneTextures, saveZoneTextures, textureById } from '../../lib/textures';
 import { TexturePicker } from './TexturePicker';
+import { AgentLinks } from './AgentLinks';
+import type { PendingLink } from './AgentLinks';
+import { saveLink, deleteLink, hitTestAgent } from '../../lib/agent-links';
+import type { AgentLink } from '../../lib/agent-links';
 
 interface Actor {
   id: string; x: number; y: number; tx: number; ty: number;
@@ -33,8 +37,9 @@ function pickTarget(a: Actor) {
 }
 
 export function PixelTown(
-  { state, onSelect, lock, onLockClick }:
-  { state: FleetState; onSelect: (a: FleetAgent) => void; lock?: LockState | null; onLockClick?: () => void },
+  { state, onSelect, lock, onLockClick, links = [], reloadLinks }:
+  { state: FleetState; onSelect: (a: FleetAgent) => void; lock?: LockState | null; onLockClick?: () => void;
+    links?: AgentLink[]; reloadLinks?: () => void },
 ) {
   const districts = useMemo(() => groupTown(state), [state]);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -47,6 +52,20 @@ export function PixelTown(
   const els = useRef<Map<string, HTMLDivElement>>(new Map());
   const stageRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: string; sx: number; sy: number; moved: boolean } | null>(null);
+  // Agent dependency arrows: the rAF moves each line + note pill to follow the two
+  // live sprites it connects, so the refs (not React) hold the per-frame positions.
+  const linkLineEls = useRef<Map<string, SVGLineElement>>(new Map());
+  const linkLabelEls = useRef<Map<string, HTMLDivElement>>(new Map());
+  const linksRef = useRef<AgentLink[]>(links);
+  useEffect(() => { linksRef.current = links; }, [links]);
+  const [pending, setPending] = useState<PendingLink | null>(null);
+  // Display label for an agent id (costume title · slug) — used in the link editor.
+  const nameOf = (id: string) => {
+    const a = state.agents.find((x) => x.id === id);
+    if (!a) return id;
+    const title = costumeFor(a.role).title;
+    return a.label && a.label !== 'oracle' ? `${title}·${a.label}` : title;
+  };
   // Animated decorations (campfire/windmill/sparkle): the rAF cycles their frames.
   const propEls = useRef<Map<string, HTMLDivElement>>(new Map());
   const animState = useRef<Map<string, { frame: number; t: number }>>(new Map());
@@ -90,6 +109,15 @@ export function PixelTown(
     try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     if (!d || d.id !== a.id) return;
     if (!d.moved) { onSelect(a); return; } // a press without movement = click → open chat
+    // Dropped ONTO another sprite → record "A waits on B" and open the note editor.
+    const st = stageRef.current;
+    if (st) {
+      const r = st.getBoundingClientRect();
+      const px = e.clientX - r.left, py = e.clientY - r.top;
+      const boxes = [...actors.current.values()].map((ac) => ({ id: ac.id, x: ac.x, y: ac.y, size: SPRITE }));
+      const targetId = hitTestAgent(boxes, px, py, a.id);
+      if (targetId) setPending({ from: a.id, to: targetId, fromLabel: nameOf(a.id), toLabel: nameOf(targetId), note: '' });
+    }
     // Dropped after a drag: don't freeze it — pause where it landed, then wander on.
     const act = actors.current.get(a.id);
     if (act) { act.pinned = false; act.waitT = DRAG_PAUSE_MS; act.frame = 0; }
@@ -180,6 +208,25 @@ export function PixelTown(
         }
         el.style.transform = `translate(${act.x}px, ${act.y}px)`;
       }
+      // Dependency arrows: anchor each line + note pill to the two live sprite
+      // centres; the arrow head stops at B's edge so it isn't hidden by the sprite.
+      for (const lk of linksRef.current) {
+        const line = linkLineEls.current.get(lk.id);
+        const label = linkLabelEls.current.get(lk.id);
+        const fa = actors.current.get(lk.from), fb = actors.current.get(lk.to);
+        if (!fa || !fb) { if (line) line.style.display = 'none'; if (label) label.style.display = 'none'; continue; }
+        const x1 = fa.x + SPRITE / 2, y1 = fa.y + SPRITE / 2;
+        const cx = fb.x + SPRITE / 2, cy = fb.y + SPRITE / 2;
+        const dx = cx - x1, dy = cy - y1, len = Math.hypot(dx, dy) || 1;
+        const back = Math.min(len - 1, SPRITE * 0.55);
+        const x2 = cx - (dx / len) * back, y2 = cy - (dy / len) * back;
+        if (line) {
+          line.style.display = '';
+          line.setAttribute('x1', String(x1)); line.setAttribute('y1', String(y1));
+          line.setAttribute('x2', String(x2)); line.setAttribute('y2', String(y2));
+        }
+        if (label) { label.style.display = ''; label.style.transform = `translate(${(x1 + x2) / 2}px, ${(y1 + y2) / 2}px)`; }
+      }
       // Advance the animated decorations (frozen when reduced-motion is set).
       for (const a of animsRef.current) {
         const el = propEls.current.get(a.id);
@@ -216,6 +263,20 @@ export function PixelTown(
     return p ? { x: p.home.x + p.home.w / 2, y: p.home.y + p.home.h / 2 } : null;
   };
 
+  // Link editor (note on the arrow): create on drop, or edit/delete an existing one.
+  const submitLink = async () => {
+    const p = pending; if (!p) return;
+    setPending(null);
+    try { await saveLink(p.from, p.to, p.note); reloadLinks?.(); } catch { /* keep the map quiet */ }
+  };
+  const removeLinkNow = async () => {
+    const p = pending; if (!p?.editingId) return;
+    setPending(null);
+    try { await deleteLink(p.editingId); reloadLinks?.(); } catch { /* keep the map quiet */ }
+  };
+  const editLink = (l: AgentLink) =>
+    setPending({ from: l.from, to: l.to, fromLabel: nameOf(l.from), toLabel: nameOf(l.to), note: l.note, editingId: l.id });
+
   return (
     <div ref={wrapRef} className="w-full">
     <div ref={stageRef} className="town-stage" style={{ width: stage.width, height: stage.height }}>
@@ -250,6 +311,18 @@ export function PixelTown(
           return <line key={`${r.from}>${r.to}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#c084fc" strokeOpacity={0.5} strokeWidth={2} className="town-road" />;
         })}
       </svg>
+
+      <AgentLinks
+        links={links}
+        registerLine={(id, el) => { if (el) linkLineEls.current.set(id, el); else linkLineEls.current.delete(id); }}
+        registerLabel={(id, el) => { if (el) linkLabelEls.current.set(id, el); else linkLabelEls.current.delete(id); }}
+        onEdit={editLink}
+        pending={pending}
+        onNote={(note) => setPending((p) => (p ? { ...p, note } : p))}
+        onSubmit={submitLink}
+        onCancel={() => setPending(null)}
+        onDelete={removeLinkNow}
+      />
 
       {stage.headers.map((h) => (
         <div key={h.session} className="town-district-label" style={{ left: 8, top: h.y }}>

@@ -45,6 +45,48 @@
   .town-zone-label { font-size: 10px; }
 }
 
+/* ---- Agent dependency links (drag A onto B → arrow "A waits on B") ---- */
+.town-links-svg {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  width: 100%; height: 100%; overflow: visible;
+}
+.town-link-line { animation: town-dash 0.9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .town-link-line { animation: none; } }
+.town-link-note {
+  position: absolute; left: 0; top: 0; z-index: 7;
+  transform: translate(-9999px, -9999px); /* parked until rAF places it */
+  max-width: 160px; padding: 1px 6px; border-radius: 999px;
+  background: #1a1326e0; border: 1px solid #fbbf2466; color: #fde68a;
+  font-size: 10px; line-height: 15px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+  margin-left: -1px; translate: -50% -50%; touch-action: none;
+}
+.town-link-note:hover { border-color: #fbbf24cc; background: #241a33f0; }
+.town-link-editor-backdrop {
+  position: fixed; inset: 0; z-index: 50; display: flex;
+  align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.55); backdrop-filter: blur(2px); padding: 16px;
+}
+.town-link-editor {
+  width: 100%; max-width: 380px; background: #14101e;
+  border: 1px solid #fbbf2455; border-radius: 12px; padding: 16px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+}
+.town-link-editor-head { font-size: 13px; color: #cbd5e1; margin-bottom: 10px; }
+.town-link-editor-arrow { color: #64748b; }
+.town-link-editor-input {
+  width: 100%; background: #0a0710; border: 1px solid #334155;
+  border-radius: 8px; padding: 8px 10px; color: #f1f5f9; font-size: 13px;
+}
+.town-link-editor-input:focus { outline: none; border-color: #fbbf24; }
+.town-link-editor-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.town-link-btn {
+  padding: 5px 12px; border-radius: 8px; font-size: 12px;
+  border: 1px solid #ffffff22; background: #ffffff10; color: #cbd5e1; cursor: pointer;
+}
+.town-link-btn-save { background: #fbbf2422; border-color: #fbbf2466; color: #fcd34d; }
+.town-link-btn-del { background: #f8717122; border-color: #f8717155; color: #fca5a5; }
+
 /* ---- Pixel map view (ai-town style) ---- */
 .town-stage {
   position: relative;
