@@ -34,7 +34,14 @@ function runEnv(): Record<string, string> {
   return { ...process.env, PATH: path } as Record<string, string>;
 }
 
-export type DeployMode = 'full' | 'ui';
+export type DeployMode = 'full' | 'ui' | 'migrations' | 'ef' | 'bankbot';
+// slice → the deploy-staging.sh substrate flag (full = all 5, no flag)
+const MODE_FLAG: Record<Exclude<DeployMode, 'full'>, string> = {
+  ui: '--ui-only', migrations: '--migrations-only', ef: '--ef-only', bankbot: '--bankbot-only',
+};
+const MODE_LABEL: Record<DeployMode, string> = {
+  full: 'full', ui: 'UI-only', migrations: 'migrations-only', ef: 'edge-fns-only', bankbot: 'bankbot-only',
+};
 export interface DeployState {
   status: 'idle' | 'running' | 'done';
   action?: string;               // human label ("full deploy", "pull main (both repos)")
@@ -92,16 +99,30 @@ function updateMainSnippet(repo: string): string {
 /** Run the gateway's deploy-staging.sh from the PRIMARY gateway checkout. When
  *  "pull main first" is set, run our own worktree-safe update on BOTH repos
  *  first (the script's own --pull-main breaks when main is held by a worktree). */
-export function startDeploy(opts: { mode?: DeployMode; dry?: boolean; pull?: boolean }): { ok: true } | { error: string } {
+export function startDeploy(opts: {
+  mode?: DeployMode; dry?: boolean; pull?: boolean; allowDirty?: boolean; skipGate?: boolean;
+}): { ok: true } | { error: string } {
   const c = cfg();
   const script = join(c.gatewayRepo, 'scripts/deploy-staging.sh');
   if (!existsSync(script)) return { error: `deploy script not found: ${script}` };
-  const args = [opts.mode === 'ui' ? '--ui-only' : '', opts.dry ? '--dry-run' : '--deploy'].filter(Boolean);
-  const deployCmd = `bash "${script}" ${args.join(' ')}`;
+  const mode = opts.mode || 'full';
+  const args: string[] = [];
+  if (mode !== 'full') args.push(MODE_FLAG[mode]);
+  args.push(opts.dry ? '--dry-run' : '--deploy');
+  // Env overrides: WF7_ALLOW_DIRTY=1 bypasses the clean-tree guard; WF7_SKIP_GATE=1
+  // continues past a RED deployed-shape gate — script honours it only on --dry-run,
+  // so we gate it on dry too (no skipping the gate on a live mutation).
+  const envPrefix = [
+    opts.allowDirty ? 'WF7_ALLOW_DIRTY=1' : '',
+    opts.skipGate && opts.dry ? 'WF7_SKIP_GATE=1' : '',
+  ].filter(Boolean).join(' ');
+  const deployCmd = `${envPrefix ? envPrefix + ' ' : ''}bash "${script}" ${args.join(' ')}`;
   const repos = [c.gatewayRepo, c.uiRepo].filter((r) => existsSync(join(r, '.git')));
   const cmd = opts.pull ? `${repos.map(updateMainSnippet).join('; ')}; echo; ${deployCmd}` : deployCmd;
-  const label = `${opts.mode === 'ui' ? 'UI-only ' : 'full '}${opts.dry ? 'dry-run' : 'deploy'}${opts.pull ? ' (+pull main)' : ''}`;
-  const display = `${opts.pull ? 'pull main → ' : ''}deploy-staging.sh ${args.join(' ')}`;
+  const extras = [opts.pull && '+pull', opts.allowDirty && '+allow-dirty', opts.skipGate && opts.dry && '+skip-gate']
+    .filter(Boolean).join(' ');
+  const label = `${MODE_LABEL[mode]} ${opts.dry ? 'dry-run' : 'deploy'}${extras ? ' ' + extras : ''}`;
+  const display = `${opts.pull ? 'pull main → ' : ''}${deployCmd.replace(`"${script}"`, 'deploy-staging.sh')}`;
   return begin(`staging ${label}`, display, 'bash', ['-c', cmd], c.gatewayRepo);
 }
 

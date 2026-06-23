@@ -208,10 +208,13 @@ const server = Bun.serve({
       try {
         if (req.method === 'GET') return Response.json(getDeploy(), { headers: { 'cache-control': 'no-store' } });
         if (req.method === 'POST') {
-          const b = (await req.json()) as { action?: string; mode?: 'full' | 'ui'; dry?: boolean; pull?: boolean };
+          const b = (await req.json()) as {
+            action?: string; mode?: 'full' | 'ui' | 'migrations' | 'ef' | 'bankbot';
+            dry?: boolean; pull?: boolean; allowDirty?: boolean; skipGate?: boolean;
+          };
           if (b.action === 'cancel') return Response.json(cancelDeploy());
           if (b.action === 'pull-main') { const r = startPullMain(); return Response.json(r, { status: 'error' in r ? 400 : 200 }); }
-          const r = startDeploy({ mode: b.mode, dry: b.dry, pull: b.pull });
+          const r = startDeploy({ mode: b.mode, dry: b.dry, pull: b.pull, allowDirty: b.allowDirty, skipGate: b.skipGate });
           return Response.json(r, { status: 'error' in r ? 400 : 200 });
         }
       } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }

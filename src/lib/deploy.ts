@@ -3,7 +3,7 @@
 // main on both repos, or cancels. Poll fast while a run streams.
 import { useEffect, useRef, useState } from 'react';
 
-export type DeployMode = 'full' | 'ui';
+export type DeployMode = 'full' | 'ui' | 'migrations' | 'ef' | 'bankbot';
 export interface DeployState {
   status: 'idle' | 'running' | 'done';
   action?: string;
@@ -36,6 +36,8 @@ async function post(body: Record<string, unknown>): Promise<{ ok?: boolean; erro
   return res.json().catch(() => ({ error: `deploy ${res.status}` }));
 }
 
-export const startDeploy = (mode: DeployMode, dry: boolean, pull: boolean) => post({ action: 'deploy', mode, dry, pull });
+export const startDeploy = (
+  mode: DeployMode, dry: boolean, pull: boolean, allowDirty: boolean, skipGate: boolean,
+) => post({ action: 'deploy', mode, dry, pull, allowDirty, skipGate });
 export const pullMain = () => post({ action: 'pull-main' });
 export const cancelDeploy = () => post({ action: 'cancel' });

@@ -14,14 +14,25 @@ function Btn({ active, onClick, children }: { active: boolean; onClick: () => vo
   );
 }
 
+const SLICES: { id: DeployMode; label: string; help: string }[] = [
+  { id: 'full', label: 'Full stack', help: 'All 5 substrates: migrations → edge-functions → cf-worker → admin UI → bank-bot fleet (gate-gated).' },
+  { id: 'ui', label: 'UI only', help: '--ui-only: just the Vercel admin portal. Skips the deployed-shape gate (ships no data-shape change).' },
+  { id: 'migrations', label: 'Migrations', help: '--migrations-only: apply pending Supabase migrations only.' },
+  { id: 'ef', label: 'Edge fns', help: '--ef-only: force redeploy-all of the edge functions.' },
+  { id: 'bankbot', label: 'Bank-bot', help: '--bankbot-only: force-roll the bank-bot fleet only.' },
+];
+
 export function DeployPanel({ onClose }: { onClose: () => void }) {
   const { run, reload } = useDeploy(true);
   const [mode, setMode] = useState<DeployMode>('full');
   const [dry, setDry] = useState(true);   // default to the safe plan-only path
   const [pull, setPull] = useState(false);
+  const [allowDirty, setAllowDirty] = useState(false);
+  const [skipGate, setSkipGate] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const logRef = useRef<HTMLPreElement>(null);
   const running = run?.status === 'running';
+  const sliceLabel = SLICES.find((s) => s.id === mode)?.label ?? mode;
 
   useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [run?.log]);
 
@@ -33,9 +44,9 @@ export function DeployPanel({ onClose }: { onClose: () => void }) {
   };
 
   const deploy = () => fire(
-    () => startDeploy(mode, dry, pull),
+    () => startDeploy(mode, dry, pull, allowDirty, skipGate),
     dry ? undefined
-      : `LIVE ${mode === 'ui' ? 'UI-only ' : 'full '}deploy to STAGING${pull ? ' (pulls main first)' : ''}. This mutates staging. Continue?`,
+      : `LIVE ${sliceLabel} deploy to STAGING${pull ? ' (pulls main first)' : ''}${allowDirty ? ' — ALLOW-DIRTY (ships uncommitted code!)' : ''}. This mutates staging. Continue?`,
   );
 
   return (
@@ -50,18 +61,27 @@ export function DeployPanel({ onClose }: { onClose: () => void }) {
         </p>
 
         {/* which slice */}
-        <div className="rounded-lg border border-white/10 p-2.5 mb-3 space-y-2">
-          <div className="flex items-center gap-2">
+        <div className="rounded-lg border border-white/10 p-2.5 mb-3 space-y-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-[10px] text-white/40 w-16">Slice</span>
-            <Btn active={mode === 'full'} onClick={() => setMode('full')}>Full stack</Btn>
-            <Btn active={mode === 'ui'} onClick={() => setMode('ui')}>UI only (portal)</Btn>
+            {SLICES.map((s) => (
+              <Btn key={s.id} active={mode === s.id} onClick={() => setMode(s.id)}>{s.label}</Btn>
+            ))}
           </div>
-          <div className="flex flex-wrap items-center gap-4 pl-[72px]">
+          <p className="text-[10px] text-white/45 pl-[72px]">{SLICES.find((s) => s.id === mode)?.help}</p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pl-[72px]">
             <label className="flex items-center gap-1.5 text-[11px] text-white/70" title="Plan + stage only — runs the gate informationally and mutates nothing.">
               <input type="checkbox" checked={dry} onChange={(e) => setDry(e.target.checked)} /> Dry-run (plan only)
             </label>
-            <label className="flex items-center gap-1.5 text-[11px] text-white/70" title="git fetch + checkout main + ff-pull before deploying.">
+            <label className="flex items-center gap-1.5 text-[11px] text-white/70" title="Fetch + land both repos on latest origin/main before deploying.">
               <input type="checkbox" checked={pull} onChange={(e) => setPull(e.target.checked)} /> Pull main first
+            </label>
+            <label className="flex items-center gap-1.5 text-[11px] text-amber-300/80" title="WF7_ALLOW_DIRTY=1 — deploy even with uncommitted changes in the tree (ships WIP).">
+              <input type="checkbox" checked={allowDirty} onChange={(e) => setAllowDirty(e.target.checked)} /> Allow dirty tree
+            </label>
+            <label className={`flex items-center gap-1.5 text-[11px] ${dry ? 'text-white/70' : 'text-white/30'}`}
+              title="WF7_SKIP_GATE=1 — continue past a RED deployed-shape gate. Honoured on dry-run only.">
+              <input type="checkbox" disabled={!dry} checked={skipGate && dry} onChange={(e) => setSkipGate(e.target.checked)} /> Skip gate <span className="text-white/30">(dry only)</span>
             </label>
           </div>
         </div>
@@ -77,7 +97,7 @@ export function DeployPanel({ onClose }: { onClose: () => void }) {
             ? <button onClick={deploy} className="ml-auto px-3 py-1.5 rounded-lg text-[12px]"
                 style={dry ? { background: '#38bdf822', color: '#7dd3fc', border: '1px solid #38bdf855' }
                   : { background: '#f59e0b22', color: '#fbbf24', border: '1px solid #f59e0b66' }}>
-                {dry ? '🔍 Dry-run' : '🚀 Deploy'} {mode === 'ui' ? 'UI' : 'full'}
+                {dry ? '🔍 Dry-run' : '🚀 Deploy'} · {sliceLabel}
               </button>
             : <button onClick={() => cancelDeploy()} className="ml-auto px-3 py-1.5 rounded-lg text-[12px]"
                 style={{ background: '#f8717122', color: '#fca5a5', border: '1px solid #f8717155' }}>■ Cancel</button>}
