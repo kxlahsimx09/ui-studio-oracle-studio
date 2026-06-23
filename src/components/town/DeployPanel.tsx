@@ -73,7 +73,7 @@ export function DeployPanel({ onClose }: { onClose: () => void }) {
             <label className="flex items-center gap-1.5 text-[11px] text-white/70" title="Plan + stage only — runs the gate informationally and mutates nothing.">
               <input type="checkbox" checked={dry} onChange={(e) => setDry(e.target.checked)} /> Dry-run (plan only)
             </label>
-            <label className="flex items-center gap-1.5 text-[11px] text-white/70" title="Fetch + land both repos on latest origin/main before deploying.">
+            <label className="flex items-center gap-1.5 text-[11px] text-white/70" title="Fetch + land all 3 repos (gateway + UI + bank-bot) on latest origin/main before deploying.">
               <input type="checkbox" checked={pull} onChange={(e) => setPull(e.target.checked)} /> Pull main first
             </label>
             <label className="flex items-center gap-1.5 text-[11px] text-amber-300/80" title="WF7_ALLOW_DIRTY=1 — deploy even with uncommitted changes in the tree (ships WIP).">
@@ -90,8 +90,8 @@ export function DeployPanel({ onClose }: { onClose: () => void }) {
           <button onClick={() => fire(pullMain)} disabled={running}
             className="px-3 py-1.5 rounded-lg text-[12px] disabled:opacity-40"
             style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }}
-            title="git fetch origin main + checkout main + pull --ff-only on gateway AND admin-portal">
-            ⤓ Fetch &amp; pull main (both repos)
+            title="fetch + land on latest origin/main for gateway + admin-portal + bank-bot">
+            ⤓ Fetch &amp; pull main (all 3 repos)
           </button>
           {!running
             ? <button onClick={deploy} className="ml-auto px-3 py-1.5 rounded-lg text-[12px]"

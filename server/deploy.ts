@@ -15,11 +15,15 @@ import { homedir } from 'node:os';
 import { existsSync, readFileSync } from 'node:fs';
 import { spawn, type ChildProcess } from 'node:child_process';
 
-interface Cfg { gatewayRepo: string; uiRepo: string }
+interface Cfg { gatewayRepo: string; uiRepo: string; bankbotRepo: string }
 const DEFAULT: Cfg = {
   gatewayRepo: join(homedir(), 'Code/github.com/kxlahsimx09/mb-next-payment-gateway'),
   uiRepo: join(homedir(), 'Code/github.com/kxlahsimx09/mb-next-admin-portal'),
+  bankbotRepo: join(homedir(), 'Code/github.com/kxlahsimx09/mb-next-bank-bot'),
 };
+// The primary checkouts "pull main" / "pull main first" keep up to date — all
+// three substrate repos: gateway (backend), admin portal (UI), bank-bot fleet.
+const primaryRepos = (c: Cfg) => [c.gatewayRepo, c.uiRepo, c.bankbotRepo].filter((r) => existsSync(join(r, '.git')));
 function cfg(): Cfg {
   try { return { ...DEFAULT, ...JSON.parse(readFileSync(join(import.meta.dir, 'deploy-config.json'), 'utf8')) }; }
   catch { return DEFAULT; }
@@ -117,8 +121,7 @@ export function startDeploy(opts: {
     opts.skipGate && opts.dry ? 'WF7_SKIP_GATE=1' : '',
   ].filter(Boolean).join(' ');
   const deployCmd = `${envPrefix ? envPrefix + ' ' : ''}bash "${script}" ${args.join(' ')}`;
-  const repos = [c.gatewayRepo, c.uiRepo].filter((r) => existsSync(join(r, '.git')));
-  const cmd = opts.pull ? `${repos.map(updateMainSnippet).join('; ')}; echo; ${deployCmd}` : deployCmd;
+  const cmd = opts.pull ? `${primaryRepos(c).map(updateMainSnippet).join('; ')}; echo; ${deployCmd}` : deployCmd;
   const extras = [opts.pull && '+pull', opts.allowDirty && '+allow-dirty', opts.skipGate && opts.dry && '+skip-gate']
     .filter(Boolean).join(' ');
   const label = `${MODE_LABEL[mode]} ${opts.dry ? 'dry-run' : 'deploy'}${extras ? ' ' + extras : ''}`;
@@ -126,13 +129,13 @@ export function startDeploy(opts: {
   return begin(`staging ${label}`, display, 'bash', ['-c', cmd], c.gatewayRepo);
 }
 
-/** Bring BOTH primary checkouts (gateway + UI) to latest origin/main. */
+/** Bring every primary checkout (gateway + UI + bank-bot) to latest origin/main. */
 export function startPullMain(): { ok: true } | { error: string } {
   const c = cfg();
-  const repos = [c.gatewayRepo, c.uiRepo].filter((r) => existsSync(join(r, '.git')));
-  if (!repos.length) return { error: 'no primary checkouts found for gateway / admin-portal' };
-  const display = `git fetch + land on origin/main × ${repos.length} repo(s)`;
-  return begin('pull main (both repos)', display, 'bash', ['-c', repos.map(updateMainSnippet).join('; ')], c.gatewayRepo);
+  const repos = primaryRepos(c);
+  if (!repos.length) return { error: 'no primary checkouts found for gateway / admin-portal / bank-bot' };
+  const display = `git fetch + land on origin/main × ${repos.length} repos`;
+  return begin('pull main (all repos)', display, 'bash', ['-c', repos.map(updateMainSnippet).join('; ')], c.gatewayRepo);
 }
 
 export function cancelDeploy(): { ok: boolean } {
