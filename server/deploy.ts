@@ -49,11 +49,11 @@ const push = (line: string) => { run.log.push(line); if (run.log.length > LOG_MA
 
 export const getDeploy = (): DeployState => run;
 
-function begin(action: string, cmd: string, args: string[], cwd: string): { ok: true } | { error: string } {
+function begin(action: string, display: string, cmd: string, args: string[], cwd: string): { ok: true } | { error: string } {
   if (run.status === 'running') return { error: 'a deploy/pull is already in progress' };
   run = { status: 'running', action, startedAt: Date.now(), exitCode: null, log: [] };
   push(`▶ ${action}`);
-  push(`$ ${cmd} ${args.join(' ')}   (cwd: ${cwd.replace(homedir(), '~')})`);
+  push(`$ ${display}   (cwd: ${cwd.replace(homedir(), '~')})`);
   let proc: ChildProcess;
   try { proc = spawn(cmd, args, { cwd, env: runEnv() }); }
   catch (e) { run.status = 'done'; run.endedAt = Date.now(); run.exitCode = -1; push(`✖ spawn failed: ${(e as Error).message}`); return { error: (e as Error).message }; }
@@ -69,31 +69,49 @@ function begin(action: string, cmd: string, args: string[], cwd: string): { ok: 
   return { ok: true };
 }
 
-/** Run the gateway's deploy-staging.sh from the PRIMARY gateway checkout. */
+// Bring one primary checkout to the LATEST origin/main. The catch: `main` is
+// often already checked out in a sibling .wt-* worktree, so `git checkout main`
+// in the primary is refused ("already used by worktree …"). So: fetch, then try
+// to land ON main (ff-merge); if the branch is held elsewhere, detach onto
+// origin/main — same commit, deployable, just no branch label. Best-effort per
+// repo (never aborts the other), every step echoed so the stream reads cleanly.
+function updateMainSnippet(repo: string): string {
+  const q = `"${repo}"`;
+  return [
+    `echo "── ${repo.replace(homedir(), '~')}"`,
+    `git -C ${q} fetch origin main || echo "  fetch failed"`,
+    `if git -C ${q} checkout main 2>/dev/null; then ` +
+      `git -C ${q} merge --ff-only origin/main || echo "  ff-merge failed (main diverged?)"; ` +
+    `elif git -C ${q} checkout --detach origin/main 2>/dev/null; then ` +
+      `echo "  main is checked out in another worktree → detached onto origin/main"; ` +
+    `else echo "  FAILED to land on main (dirty tree?)"; fi`,
+    `echo "  now at $(git -C ${q} rev-parse --short HEAD 2>/dev/null) ($(git -C ${q} rev-parse --abbrev-ref HEAD 2>/dev/null))"`,
+  ].join('; ');
+}
+
+/** Run the gateway's deploy-staging.sh from the PRIMARY gateway checkout. When
+ *  "pull main first" is set, run our own worktree-safe update on BOTH repos
+ *  first (the script's own --pull-main breaks when main is held by a worktree). */
 export function startDeploy(opts: { mode?: DeployMode; dry?: boolean; pull?: boolean }): { ok: true } | { error: string } {
   const c = cfg();
   const script = join(c.gatewayRepo, 'scripts/deploy-staging.sh');
   if (!existsSync(script)) return { error: `deploy script not found: ${script}` };
-  const args: string[] = [];
-  if (opts.mode === 'ui') args.push('--ui-only');
-  args.push(opts.dry ? '--dry-run' : '--deploy');
-  if (opts.pull) args.push('--pull-main');
+  const args = [opts.mode === 'ui' ? '--ui-only' : '', opts.dry ? '--dry-run' : '--deploy'].filter(Boolean);
+  const deployCmd = `bash "${script}" ${args.join(' ')}`;
+  const repos = [c.gatewayRepo, c.uiRepo].filter((r) => existsSync(join(r, '.git')));
+  const cmd = opts.pull ? `${repos.map(updateMainSnippet).join('; ')}; echo; ${deployCmd}` : deployCmd;
   const label = `${opts.mode === 'ui' ? 'UI-only ' : 'full '}${opts.dry ? 'dry-run' : 'deploy'}${opts.pull ? ' (+pull main)' : ''}`;
-  return begin(`staging ${label}`, 'bash', [script, ...args], c.gatewayRepo);
+  const display = `${opts.pull ? 'pull main → ' : ''}deploy-staging.sh ${args.join(' ')}`;
+  return begin(`staging ${label}`, display, 'bash', ['-c', cmd], c.gatewayRepo);
 }
 
-/** Fetch + checkout main + ff-pull on BOTH primary checkouts (gateway + UI). */
+/** Bring BOTH primary checkouts (gateway + UI) to latest origin/main. */
 export function startPullMain(): { ok: true } | { error: string } {
   const c = cfg();
   const repos = [c.gatewayRepo, c.uiRepo].filter((r) => existsSync(join(r, '.git')));
   if (!repos.length) return { error: 'no primary checkouts found for gateway / admin-portal' };
-  // One bash that walks both repos, echoing each step so the stream is readable.
-  const lines = repos.map((r) =>
-    `echo "── ${r.replace(homedir(), '~')}"; ` +
-    `git -C "${r}" fetch origin main && git -C "${r}" checkout main && git -C "${r}" pull --ff-only && ` +
-    `echo "  now at $(git -C "${r}" rev-parse --short HEAD) on $(git -C "${r}" rev-parse --abbrev-ref HEAD)" || echo "  FAILED for ${r}"`,
-  ).join('; ');
-  return begin('pull main (both repos)', 'bash', ['-c', lines], c.gatewayRepo);
+  const display = `git fetch + land on origin/main × ${repos.length} repo(s)`;
+  return begin('pull main (both repos)', display, 'bash', ['-c', repos.map(updateMainSnippet).join('; ')], c.gatewayRepo);
 }
 
 export function cancelDeploy(): { ok: boolean } {
