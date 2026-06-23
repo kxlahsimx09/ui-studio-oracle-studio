@@ -19,6 +19,7 @@ import { switchAccount } from './account-switch';
 import { carryOver } from './carry-over';
 import { listBookmarks, addBookmark, removeBookmark, respawnBookmark } from './bookmarks';
 import { listLinks, addLink, removeLink } from './agent-links';
+import { getDeploy, startDeploy, startPullMain, cancelDeploy } from './deploy';
 import { listPlans } from './usage';
 import { handlePush, startNotifyLoop } from './push';
 import { handleTelegram } from './telegram';
@@ -197,6 +198,20 @@ const server = Bun.serve({
           const b = (await req.json()) as { id?: string };
           removeLink(b.id || '');
           return Response.json({ ok: true });
+        }
+      } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    }
+    // Staging deploy: GET = current run state (log stream); POST {action} runs
+    // the gateway's deploy-staging.sh slice, pulls main on both repos, or cancels.
+    if (p === '/__fleet/deploy') {
+      try {
+        if (req.method === 'GET') return Response.json(getDeploy(), { headers: { 'cache-control': 'no-store' } });
+        if (req.method === 'POST') {
+          const b = (await req.json()) as { action?: string; mode?: 'full' | 'ui'; dry?: boolean; pull?: boolean };
+          if (b.action === 'cancel') return Response.json(cancelDeploy());
+          if (b.action === 'pull-main') { const r = startPullMain(); return Response.json(r, { status: 'error' in r ? 400 : 200 }); }
+          const r = startDeploy({ mode: b.mode, dry: b.dry, pull: b.pull });
+          return Response.json(r, { status: 'error' in r ? 400 : 200 });
         }
       } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
     }

@@ -18,6 +18,7 @@ import { StagingBand } from '../components/town/StagingBand';
 import { UsagePanel } from '../components/town/UsagePanel';
 import { LockPanel } from '../components/town/LockPanel';
 import { BookmarksPanel } from '../components/town/BookmarksPanel';
+import { DeployPanel } from '../components/town/DeployPanel';
 import './Town.css';
 
 type TownView = 'map' | 'list';
@@ -46,6 +47,7 @@ export function Town() {
   const [showUsage, setShowUsage] = useState(false);
   const [showLock, setShowLock] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
+  const [showDeploy, setShowDeploy] = useState(false);
   const { links, reload: reloadLinks } = useAgentLinks(4000);
   const polledLock = useLock(4000);
   const [lock, setLock] = useState<LockState | null>(null);
@@ -98,6 +100,12 @@ export function Town() {
             title="bookmarked agents — respawn a closed agent with its context"
           >🔖 bookmarks</button>
           <button
+            onClick={() => setShowDeploy(true)}
+            className="px-2.5 py-1 rounded-full text-[11px]"
+            style={{ background: '#38bdf822', color: '#7dd3fc', border: '1px solid #38bdf855' }}
+            title="deploy staging from the primary checkouts (full / UI-only / dry-run) + pull main"
+          >🚀 deploy</button>
+          <button
             onClick={() => setShowLock(true)}
             className="px-2.5 py-1 rounded-full text-[11px]"
             style={lock?.disabled
@@ -142,6 +150,7 @@ export function Town() {
       {showNew && <NewAgent onClose={() => setShowNew(false)} />}
       {showUsage && <UsagePanel onClose={() => setShowUsage(false)} />}
       {showBookmarks && <BookmarksPanel onClose={() => setShowBookmarks(false)} />}
+      {showDeploy && <DeployPanel onClose={() => setShowDeploy(false)} />}
       {showLock && <LockPanel lock={lock} agents={state.agents} onChange={setLock} onClose={() => setShowLock(false)} />}
 
       {loading && !state.agents.length && (
