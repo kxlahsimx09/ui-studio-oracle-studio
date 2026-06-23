@@ -64,11 +64,12 @@ export function PixelTown(
   const linkLineEls = useRef<Map<string, SVGLineElement>>(new Map());
   const linkLabelEls = useRef<Map<string, HTMLDivElement>>(new Map());
   const linksRef = useRef<AgentLink[]>(links);
-  // Panes that participate in any link — used to gate the "linked + stalled" aura.
-  const linkedPanesRef = useRef<Set<string>>(new Set());
+  // Panes at an ARROWHEAD (the depended-on `to` side) — used to gate the stall
+  // aura. The `from` (tail) is the waiter and is meant to be idle, so it's excluded.
+  const linkTargetPanesRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     linksRef.current = links;
-    linkedPanesRef.current = new Set(links.flatMap((l) => [l.fromPane, l.toPane]).filter(Boolean));
+    linkTargetPanesRef.current = new Set(links.map((l) => l.toPane).filter(Boolean));
   }, [links]);
   // Live agents, for the rAF: links resolve their endpoints by the STABLE tmux pane
   // id (%NN, never reused), not the positional `id` (session:window.pane) — that
@@ -239,12 +240,13 @@ export function PixelTown(
           el.style.backgroundPosition = bgPos(act.charIndex, 0, 0);
         }
         el.style.transform = `translate(${act.x}px, ${act.y}px)`;
-        // Linked-stall aura: a linked agent that's stopped working for >1min pulses,
-        // so a stalled dependency stands out (like the TUI's waiting glow).
+        // Stall aura: a depended-on agent (an arrowHEAD target) that's stopped
+        // working for >1min pulses, so a stalled dependency stands out. The waiting
+        // source (tail) is excluded — it's meant to be idle.
         if (act.status === 'working') act.idleSince = undefined;
         else if (act.idleSince == null) act.idleSince = nowMs;
         const stalled = act.idleSince != null && nowMs - act.idleSince > IDLE_AURA_MS
-          && act.paneId != null && linkedPanesRef.current.has(act.paneId);
+          && act.paneId != null && linkTargetPanesRef.current.has(act.paneId);
         el.classList.toggle('town-actor-aura', stalled);
       }
       // Dependency arrows: anchor each line + note pill to the two live sprite
