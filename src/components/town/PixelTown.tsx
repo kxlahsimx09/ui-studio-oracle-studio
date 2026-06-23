@@ -27,7 +27,10 @@ interface Actor {
   dir: number; frame: number; frameT: number; waitT: number;
   status: string; charIndex: number; home: { x: number; y: number; w: number; h: number };
   pinned?: boolean; // dragged to a fixed spot — stops wandering / re-clamping
+  paneId?: string;  // stable tmux pane id — to match links/notes
+  idleSince?: number; // ms when it last stopped working (for the linked-stall aura)
 }
+const IDLE_AURA_MS = 60_000; // linked agent idle this long → stall aura
 
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -61,7 +64,12 @@ export function PixelTown(
   const linkLineEls = useRef<Map<string, SVGLineElement>>(new Map());
   const linkLabelEls = useRef<Map<string, HTMLDivElement>>(new Map());
   const linksRef = useRef<AgentLink[]>(links);
-  useEffect(() => { linksRef.current = links; }, [links]);
+  // Panes that participate in any link — used to gate the "linked + stalled" aura.
+  const linkedPanesRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    linksRef.current = links;
+    linkedPanesRef.current = new Set(links.flatMap((l) => [l.fromPane, l.toPane]).filter(Boolean));
+  }, [links]);
   // Live agents, for the rAF: links resolve their endpoints by the STABLE tmux pane
   // id (%NN, never reused), not the positional `id` (session:window.pane) — that
   // slot gets reused when an agent disappears, which made arrows jump to whoever
@@ -168,14 +176,14 @@ export function PixelTown(
       const home = place.home;
       let act = actors.current.get(a.id);
       if (!act) {
-        act = { id: a.id, x: rnd(home.x, home.x + home.w - SPRITE), y: rnd(home.y, home.y + home.h - SPRITE), tx: 0, ty: 0, dir: 0, frame: 0, frameT: 0, waitT: rnd(0, 800), status: a.status, charIndex: charIndexFor(a.role), home };
+        act = { id: a.id, x: rnd(home.x, home.x + home.w - SPRITE), y: rnd(home.y, home.y + home.h - SPRITE), tx: 0, ty: 0, dir: 0, frame: 0, frameT: 0, waitT: rnd(0, 800), status: a.status, charIndex: charIndexFor(a.role), home, paneId: a.paneId };
         pickTarget(act);
         actors.current.set(a.id, act);
       } else {
         // Zones rebuild every poll; only re-target when the rect VALUE changed,
         // else a stale target may sit outside the new home and pin the sprite to a wall.
         const moved = act.home.x !== home.x || act.home.y !== home.y || act.home.w !== home.w || act.home.h !== home.h;
-        act.status = a.status; act.home = home; act.charIndex = charIndexFor(a.role);
+        act.status = a.status; act.home = home; act.charIndex = charIndexFor(a.role); act.paneId = a.paneId;
         if (!act.pinned) {
           act.x = clamp(act.x, home.x, home.x + Math.max(0, home.w - SPRITE));
           act.y = clamp(act.y, home.y, home.y + Math.max(0, home.h - SPRITE));
@@ -201,6 +209,7 @@ export function PixelTown(
     let raf = 0; let last = 0;
     const tick = (t: number) => {
       const dt = last ? Math.min(60, t - last) : 16; last = t;
+      const nowMs = Date.now();
       for (const act of actors.current.values()) {
         const el = els.current.get(act.id);
         if (!el) continue;
@@ -230,6 +239,13 @@ export function PixelTown(
           el.style.backgroundPosition = bgPos(act.charIndex, 0, 0);
         }
         el.style.transform = `translate(${act.x}px, ${act.y}px)`;
+        // Linked-stall aura: a linked agent that's stopped working for >1min pulses,
+        // so a stalled dependency stands out (like the TUI's waiting glow).
+        if (act.status === 'working') act.idleSince = undefined;
+        else if (act.idleSince == null) act.idleSince = nowMs;
+        const stalled = act.idleSince != null && nowMs - act.idleSince > IDLE_AURA_MS
+          && act.paneId != null && linkedPanesRef.current.has(act.paneId);
+        el.classList.toggle('town-actor-aura', stalled);
       }
       // Dependency arrows: anchor each line + note pill to the two live sprite
       // centres; the arrow head stops at B's edge so it isn't hidden by the sprite.

@@ -188,6 +188,19 @@
 }
 .town-actor-offline { filter: grayscale(1) brightness(0.5); opacity: 0.5; }
 .town-actor-idle { filter: brightness(0.9); }
+/* Linked-stall aura: a LINKED agent that's been not-working for >1min pulses a
+   cyan halo ring (drawn as a ::after glow so it hugs the sprite, distinct from the
+   amber "waiting for input" glow). Flags a stalled dependency at a glance. */
+.town-actor-aura::after {
+  content: ''; position: absolute; inset: -3px; border-radius: 50%;
+  box-shadow: 0 0 8px 2px rgba(125,211,252,0.7), 0 0 16px 5px rgba(125,211,252,0.3);
+  animation: town-aura-pulse 1.5s ease-in-out infinite; pointer-events: none;
+}
+@keyframes town-aura-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(0.9); }
+  50%      { opacity: 1;   transform: scale(1.1); }
+}
+@media (prefers-reduced-motion: reduce) { .town-actor-aura::after { animation: none; opacity: 0.8; } }
 /* Bottom-anchored above the sprite + flex column → it grows UPWARD and handles a
    variable number of rows (crown / name / ctx% / account) cleanly. Each field is
    its own row, so a long 🔑account can never push ctx% off (the pinned-agent bug). */
