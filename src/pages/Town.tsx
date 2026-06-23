@@ -20,6 +20,8 @@ import { UsagePanel } from '../components/town/UsagePanel';
 import { LockPanel } from '../components/town/LockPanel';
 import { BookmarksPanel } from '../components/town/BookmarksPanel';
 import { DeployPanel } from '../components/town/DeployPanel';
+import { SyncHud } from '../components/town/SyncHud';
+import { useDeployRunning } from '../lib/deploy';
 import './Town.css';
 
 type TownView = 'map' | 'list';
@@ -49,6 +51,7 @@ export function Town() {
   const [showLock, setShowLock] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [showDeploy, setShowDeploy] = useState(false);
+  const deploying = useDeployRunning();
   const { links, reload: reloadLinks } = useAgentLinks(4000);
   const { notes, reload: reloadNotes } = useAgentNotes(4000);
   const polledLock = useLock(4000);
@@ -104,9 +107,11 @@ export function Town() {
           <button
             onClick={() => setShowDeploy(true)}
             className="px-2.5 py-1 rounded-full text-[11px]"
-            style={{ background: '#38bdf822', color: '#7dd3fc', border: '1px solid #38bdf855' }}
+            style={deploying
+              ? { background: '#f59e0b2a', color: '#fbbf24', border: '1px solid #f59e0b88' }
+              : { background: '#38bdf822', color: '#7dd3fc', border: '1px solid #38bdf855' }}
             title="deploy staging from the primary checkouts (full / UI-only / dry-run) + pull main"
-          >🚀 deploy</button>
+          ><span className={`town-rocket${deploying ? ' town-rocket-fly' : ''}`}>🚀</span> {deploying ? 'deploying…' : 'deploy'}</button>
           <button
             onClick={() => setShowLock(true)}
             className="px-2.5 py-1 rounded-full text-[11px]"
@@ -163,6 +168,7 @@ export function Town() {
       )}
 
       <StagingBand />
+      <SyncHud />
     </div>
   );
 }

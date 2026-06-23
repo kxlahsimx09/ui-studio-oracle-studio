@@ -1,6 +1,51 @@
 /* Fleet Town animations — "working" agents walk, "asleep" agents drift a zzz,
    dispatch roads have a marching-ants dash. Kept tiny + class-driven. */
 
+/* 🚀 deploy button — the rocket lifts off + wobbles while a deploy is running. */
+@keyframes town-rocket-fly {
+  0%   { transform: translate(0, 0) rotate(0deg); }
+  25%  { transform: translate(1px, -2px) rotate(8deg); }
+  50%  { transform: translate(0, -3px) rotate(0deg); }
+  75%  { transform: translate(-1px, -2px) rotate(-8deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+}
+.town-rocket { display: inline-block; }
+.town-rocket-fly { animation: town-rocket-fly 0.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .town-rocket-fly { animation: none; } }
+
+/* Top-right staging-sync HUD (collapsible). */
+.town-hud {
+  position: fixed; top: 64px; right: 12px; z-index: 40;
+  font-size: 11px; color: #cbd5e1;
+}
+.town-hud-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #14101eee; border: 1px solid #ffffff1f; border-radius: 999px;
+  padding: 4px 10px; cursor: pointer; backdrop-filter: blur(4px);
+}
+.town-hud-pill:hover { border-color: #ffffff3a; }
+.town-hud-card {
+  width: 232px; background: #0c0c12f2; border: 1px solid #ffffff1f;
+  border-radius: 10px; padding: 8px 9px; box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+  backdrop-filter: blur(5px);
+}
+.town-hud-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.town-hud-verdict { font-size: 9px; font-weight: 700; letter-spacing: 0.04em; margin-left: 2px; }
+.town-hud-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
+.town-hud-btn {
+  background: #ffffff10; border: 1px solid #ffffff1f; border-radius: 6px;
+  color: #cbd5e1; cursor: pointer; font-size: 11px; line-height: 1; padding: 2px 5px;
+}
+.town-hud-btn:hover { background: #ffffff1c; }
+.town-hud-btn:disabled { opacity: 0.4; cursor: default; }
+.town-hud-rows { display: flex; flex-direction: column; gap: 3px; }
+.town-hud-row { display: flex; align-items: center; gap: 6px; }
+.town-hud-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #aab4c4; }
+.town-hud-state { font-size: 9px; text-transform: uppercase; letter-spacing: 0.03em; }
+.town-hud-empty { color: #64748b; font-size: 10px; padding: 2px 0; }
+.town-hud-foot { margin-top: 6px; font-size: 9px; color: #5b6675; }
+@media (max-width: 520px) { .town-hud-card { width: 200px; } .town-hud { top: 56px; } }
+
 @keyframes town-walk {
   0%, 100% { transform: translateY(0) rotate(-2deg); }
   50%      { transform: translateY(-3px) rotate(2deg); }

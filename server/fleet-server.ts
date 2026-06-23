@@ -21,6 +21,7 @@ import { listBookmarks, addBookmark, removeBookmark, respawnBookmark } from './b
 import { listLinks, addLink, removeLink } from './agent-links';
 import { getDeploy, startDeploy, startPullMain, cancelDeploy } from './deploy';
 import { listNotes, setNote, removeNote } from './agent-notes';
+import { getVerify, runVerify } from './verify';
 import { listPlans } from './usage';
 import { handlePush, startNotifyLoop } from './push';
 import { handleTelegram } from './telegram';
@@ -230,6 +231,16 @@ const server = Bun.serve({
           const b = (await req.json()) as { pane?: string };
           removeNote(b.pane || '');
           return Response.json({ ok: true });
+        }
+      } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    }
+    // Staging sync HUD: GET = last verify result; POST {force?} runs verify-staging.sh.
+    if (p === '/__fleet/verify') {
+      try {
+        if (req.method === 'GET') return Response.json(getVerify(), { headers: { 'cache-control': 'no-store' } });
+        if (req.method === 'POST') {
+          const b = (await req.json().catch(() => ({}))) as { force?: boolean };
+          return Response.json({ ...runVerify(!!b.force), state: getVerify() });
         }
       } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
     }

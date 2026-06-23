@@ -29,6 +29,20 @@ export function useDeploy(open: boolean): { run: DeployState | null; reload: () 
   return { run, reload: () => tick.current() };
 }
 
+/** Lightweight poll of just the deploy run status — for the header rocket
+ *  animation, which must react even while the panel is closed. */
+export function useDeployRunning(pollMs = 3000): boolean {
+  const [running, setRunning] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const load = () => fetch(ENDPOINT).then((r) => r.json()).then((d: DeployState) => { if (alive) setRunning(d?.status === 'running'); }).catch(() => {});
+    load();
+    const id = setInterval(load, pollMs);
+    return () => { alive = false; clearInterval(id); };
+  }, [pollMs]);
+  return running;
+}
+
 async function post(body: Record<string, unknown>): Promise<{ ok?: boolean; error?: string }> {
   const res = await fetch(ENDPOINT, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
