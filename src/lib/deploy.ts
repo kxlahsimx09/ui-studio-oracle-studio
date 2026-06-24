@@ -60,7 +60,7 @@ export function useDeploySignal(pollMs = 2500): { deploying: boolean; fx: Deploy
         const f: DeployFx = d.exitCode === 0 ? 'launch' : 'fall';
         setFx(f);
         clearTimeout(timer.current);
-        timer.current = setTimeout(() => { if (alive) setFx(null); }, f === 'launch' ? 2700 : 3600);
+        timer.current = setTimeout(() => { if (alive) setFx(null); }, f === 'launch' ? 2700 : 9000);
       }
       prev.current = d?.status;
     }).catch(() => {});
