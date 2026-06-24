@@ -23,6 +23,31 @@ function cfg(): Cfg {
   catch { return DEFAULT; }
 }
 
+// Resolve the repo the run should execute in FROM THE AGENT'S PANE — its tmux
+// cwd → git toplevel → that worktree's poc/integration. So a run uses the code the
+// opened live-tester is actually on (its worktree), not a fixed primary checkout.
+function paneCwd(id?: string): string | null {
+  if (!id || !/^%\d+$/.test(id)) return null;
+  try { return execFileSync('tmux', ['display-message', '-p', '-t', id, '#{pane_current_path}'], { encoding: 'utf8' }).trim(); }
+  catch { return null; }
+}
+function repoRoot(cwd: string): string | null {
+  try { return execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim(); }
+  catch { return null; }
+}
+function repoRootForPane(paneId?: string, fallbackIntegrationDir?: string): string | null {
+  const cwd = paneCwd(paneId);
+  const root = cwd ? repoRoot(cwd) : null;
+  if (root) return root;
+  return fallbackIntegrationDir ? join(fallbackIntegrationDir, '..', '..') : null;
+}
+function integrationDirForPane(paneId: string | undefined, fallback: string): string {
+  const root = repoRootForPane(paneId);
+  if (!root) return fallback;
+  const dir = join(root, 'poc/integration');
+  return existsSync(dir) ? dir : fallback;
+}
+
 export interface RunState {
   status: 'idle' | 'running' | 'done';
   suite?: string; campaign?: string; startedAt?: number; endedAt?: number;
@@ -58,8 +83,9 @@ async function nltPane(agent: string): Promise<string> {
   } catch { return ''; }
 }
 
-/** Start a suite run. Returns {ok} or {held} (lock taken) / {error}. */
-export async function startRun(suiteId: string, raw: Record<string, unknown>, campaign = 'livetest'):
+/** Start a suite run. Returns {ok} or {held} (lock taken) / {error}. paneId =
+ *  the opened live-tester agent → run executes in THAT agent's worktree. */
+export async function startRun(suiteId: string, raw: Record<string, unknown>, campaign = 'livetest', paneId?: string):
   Promise<{ ok: true } | { error: string } | { held: unknown }> {
   if (run.status === 'running') return { error: 'a run is already in progress' };
   const s = suiteById(suiteId);
@@ -68,10 +94,11 @@ export async function startRun(suiteId: string, raw: Record<string, unknown>, ca
   try { env = buildEnv(suiteId, raw); } catch (e) { return { error: (e as Error).message }; }
 
   const c = cfg();
-  const launcher = join(c.integrationDir, s.launcher);
-  if (!existsSync(launcher)) return { error: `launcher not found: ${launcher} (set server/livetest-config.json integrationDir)` };
+  const dir = integrationDirForPane(paneId, c.integrationDir); // the agent's worktree (fallback: primary)
+  const launcher = join(dir, s.launcher);
+  if (!existsSync(launcher)) return { error: `launcher not found: ${launcher}` };
 
-  const pane = await nltPane(c.agent);
+  const pane = paneId || await nltPane(c.agent);
   const lockEnv = { ...process.env, ...(pane ? { TMUX_PANE: pane } : {}) } as Record<string, string>;
   // Acquire the staging lock AS next-live-tester. Exit 3 = held by another.
   try {
@@ -84,8 +111,8 @@ export async function startRun(suiteId: string, raw: Record<string, unknown>, ca
   }
 
   run = { status: 'running', suite: suiteId, campaign, startedAt: Date.now(), log: [], exitCode: null };
-  push(`▶ launching ${s.launcher}  (${Object.entries(env).map(([k, v]) => `${k}=${v}`).join(' ') || 'defaults — DRY-VALIDATE'})`);
-  const proc = spawn('bash', [launcher], { cwd: c.integrationDir, env: { ...process.env, ...env, ...(pane ? { TMUX_PANE: pane } : {}) } });
+  push(`▶ launching ${s.launcher} in ${dir.replace(homedir(), '~')}  (${Object.entries(env).map(([k, v]) => `${k}=${v}`).join(' ') || 'defaults — DRY-VALIDATE'})`);
+  const proc = spawn('bash', [launcher], { cwd: dir, env: { ...process.env, ...env, ...(pane ? { TMUX_PANE: pane } : {}) } });
   child = proc; run.pid = proc.pid;
   const onData = (b: Buffer) => b.toString().split('\n').forEach((l) => l && push(l));
   proc.stdout?.on('data', onData);
@@ -93,7 +120,7 @@ export async function startRun(suiteId: string, raw: Record<string, unknown>, ca
   proc.on('close', (code) => {
     run.status = 'done'; run.endedAt = Date.now(); run.exitCode = code;
     push(`■ exited ${code}${code === 3 ? ' (lock held by another)' : code === 2 ? ' (bad config/slot)' : ''}`);
-    const found = latestLegs(c.integrationDir);
+    const found = latestLegs(dir);
     if (found) { run.legs = found.legs; run.evidenceDir = found.dir; }
     try { execFileSync('bash', [c.lockScript, 'release', '--agent', c.agent, '--force'], { encoding: 'utf8' }); } catch { /* */ }
     child = null;
@@ -104,6 +131,25 @@ export async function startRun(suiteId: string, raw: Record<string, unknown>, ca
 export function cancelRun(): { ok: boolean } {
   if (child) { try { child.kill('SIGINT'); } catch { /* */ } }
   return { ok: true };
+}
+
+/** Fetch + fast-forward latest origin/main INTO the agent's repo (its worktree).
+ *  ff-only = safe: never rewrites or conflicts; fails clearly if the branch has
+ *  its own commits. Used by the panel's "pull main" button before a run. */
+export function pullMainRepo(paneId?: string): { ok: true; output: string } | { error: string } {
+  const root = repoRootForPane(paneId, cfg().integrationDir);
+  if (!root) return { error: 'could not resolve the agent repo (pane gone?)' };
+  try {
+    const out = execFileSync('bash', ['-c',
+      `git -C "${root}" fetch origin main 2>&1 && ` +
+      `git -C "${root}" merge --ff-only origin/main 2>&1 && ` +
+      `echo "now at $(git -C "${root}" rev-parse --short HEAD) on $(git -C "${root}" rev-parse --abbrev-ref HEAD)"`,
+    ], { encoding: 'utf8', timeout: 40000 });
+    return { ok: true, output: `${root.replace(homedir(), '~')}\n${out.trim()}` };
+  } catch (e) {
+    const ex = e as { stdout?: string; stderr?: string; message: string };
+    return { error: (ex.stdout || '') + (ex.stderr || '') || ex.message };
+  }
 }
 
 // Best-effort: the most recently modified legs.json under <dir>/evidence/.

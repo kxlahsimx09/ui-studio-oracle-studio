@@ -28,7 +28,7 @@ import { handleTelegram } from './telegram';
 import { getEnvStatus, startEnvProbe } from './env-probe';
 import { getUsage } from './usage';
 import { getLockState, releaseLock, setDisabled } from './lock-state';
-import { getCatalog, getGlobals, getRun, startRun, cancelRun } from './livetest';
+import { getCatalog, getGlobals, getRun, startRun, cancelRun, pullMainRepo } from './livetest';
 
 const DIST = join(import.meta.dir, '..', 'dist');
 const PORT = Number(process.env.FLEET_PORT || 8788);
@@ -118,9 +118,10 @@ const server = Bun.serve({
     if (p === '/__fleet/livetest') {
       if (req.method === 'POST') {
         try {
-          const b = (await req.json()) as { suite?: string; env?: Record<string, unknown>; campaign?: string; action?: string };
+          const b = (await req.json()) as { suite?: string; env?: Record<string, unknown>; campaign?: string; action?: string; paneId?: string };
           if (b.action === 'cancel') return Response.json(cancelRun());
-          const r = await startRun(b.suite || '', b.env || {}, b.campaign || 'livetest');
+          if (b.action === 'pull-main') { const r = pullMainRepo(b.paneId); return Response.json(r, { status: 'error' in r ? 400 : 200 }); }
+          const r = await startRun(b.suite || '', b.env || {}, b.campaign || 'livetest', b.paneId);
           return Response.json(r, { status: 'error' in r ? 400 : 200 });
         } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
       }

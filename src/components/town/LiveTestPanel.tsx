@@ -3,8 +3,9 @@
 // and launches the suite's run-live-*.sh, streaming output back. Results are
 // "ran + per-leg colour", never PASS/FAIL (§ADR-21 — investigator owns the verdict).
 import { useEffect, useRef, useState } from 'react';
-import { useLiveTest, runSuite, cancelRun, type Control, type LegInfo } from '../../lib/livetest';
+import { useLiveTest, runSuite, cancelRun, pullMainRepo, type Control, type LegInfo } from '../../lib/livetest';
 import { useLock } from '../../lib/lock';
+import type { FleetAgent } from '../../lib/fleet';
 
 const COLOUR: Record<string, string> = { GREEN: '#4ade80', AMBER: '#fbbf24', RED: '#f87171', SKIPPED: '#64748b' };
 
@@ -94,10 +95,11 @@ function Field({ c, val, set }: { c: Control; val: unknown; set: (v: unknown) =>
   );
 }
 
-export function LiveTestPanel({ onClose }: { onClose: () => void }) {
+export function LiveTestPanel({ agent, onClose }: { agent?: FleetAgent; onClose: () => void }) {
   const { data } = useLiveTest(true);
   const lock = useLock(3000);
   const [suiteId, setSuiteId] = useState('D2'); // default to a FAST, no-money card
+  const [pulling, setPulling] = useState(false);
   const [vals, setVals] = useState<Record<string, unknown>>({});
   const [gvals, setGvals] = useState<Record<string, unknown>>({}); // global controls — persist across suite switches
   const [campaign, setCampaign] = useState('livetest');
@@ -115,9 +117,18 @@ export function LiveTestPanel({ onClose }: { onClose: () => void }) {
     if (gvals.LIVE_DEDICATED_STACK && !window.confirm('LIVE_DEDICATED_STACK wipes ALL staging transactions at start. Continue?')) return;
     if (suite?.ownerGated && !window.confirm(`Run ${suite.label} on staging?\nThis drives the REAL bank-bot and moves SIM money on the staging stack. Continue?`)) return;
     setMsg(null);
-    const r = await runSuite(suiteId, { ...gvals, ...vals }, campaign || 'livetest');
+    const r = await runSuite(suiteId, { ...gvals, ...vals }, campaign || 'livetest', agent?.paneId);
     if (r.held) { const h = r.held as { holder?: { agent?: string } }; setMsg(`staging is HELD by ${h.holder?.agent || 'another agent'} — use the 🔒 panel to seize, or wait.`); }
     else if (r.error) setMsg(r.error);
+  };
+
+  // Fetch + ff-pull latest origin/main into THIS agent's repo (its worktree).
+  const pullMain = async () => {
+    if (!agent?.paneId || pulling) return;
+    setPulling(true); setMsg(null);
+    const r = await pullMainRepo(agent.paneId);
+    setMsg(r.error ? `pull main: ${r.error.slice(0, 300)}` : `✓ pulled main\n${r.output || ''}`);
+    setPulling(false);
   };
 
   return (
@@ -143,6 +154,19 @@ export function LiveTestPanel({ onClose }: { onClose: () => void }) {
         </div>
         {suite && <p className="text-[10px] text-white/45 mb-2"><code className="text-white/70">{suite.launcher}</code> · {suite.runtime} · {suite.gate}{suite.ownerGated ? ' · ⚠ moves SIM money' : ''}</p>}
 
+        {/* runs in THIS agent's repo (its worktree) + pull latest main into it */}
+        <div className="flex items-center gap-2 mb-2 text-[10px]">
+          <span className="text-white/40">runs on:</span>
+          <code className="text-sky-300">{agent?.worktree ? `wt ${agent.worktree}` : 'primary checkout'}</code>
+          <span className="flex-1" />
+          <button onClick={pullMain} disabled={!agent?.paneId || pulling}
+            className="px-2 py-1 rounded text-[10px] disabled:opacity-40"
+            style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }}
+            title="git fetch + ff-merge latest origin/main into this agent's repo">
+            {pulling ? '⤓ pulling…' : '⤓ pull main'}
+          </button>
+        </div>
+
         {/* global controls — apply to every suite, persist across switches */}
         {!!data?.globals?.length && (
           <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 rounded-lg border border-amber-400/20 bg-amber-400/5 px-2.5 py-1.5">
@@ -162,7 +186,7 @@ export function LiveTestPanel({ onClose }: { onClose: () => void }) {
             ? <button disabled={heldByOther} onClick={launch} className="ml-auto px-3 py-1.5 rounded-lg text-[12px] disabled:opacity-40" style={{ background: '#4ade8022', color: '#4ade80', border: '1px solid #4ade8055' }}>▶ Run suite {suiteId}</button>
             : <button onClick={cancelRun} className="ml-auto px-3 py-1.5 rounded-lg text-[12px]" style={{ background: '#f8717122', color: '#fca5a5', border: '1px solid #f8717155' }}>■ Cancel run</button>}
         </div>
-        {msg && <p className="text-[11px] text-amber-300 mb-2">{msg}</p>}
+        {msg && <pre className="text-[11px] text-amber-300 mb-2 whitespace-pre-wrap break-words font-sans">{msg}</pre>}
 
         {/* run output */}
         {run && run.status !== 'idle' && (

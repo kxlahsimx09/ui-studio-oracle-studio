@@ -37,13 +37,21 @@ export function useLiveTest(open: boolean): { data: LiveTest | null; reload: () 
   return { data, reload: () => tick.current() };
 }
 
-export async function runSuite(suite: string, env: Record<string, unknown>, campaign: string): Promise<{ held?: unknown; error?: string; ok?: boolean }> {
+export async function runSuite(suite: string, env: Record<string, unknown>, campaign: string, paneId?: string): Promise<{ held?: unknown; error?: string; ok?: boolean }> {
   const res = await fetch('/__fleet/livetest', {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ suite, env, campaign }),
+    body: JSON.stringify({ suite, env, campaign, paneId }),
   });
   return res.json().catch(() => ({ error: `run ${res.status}` }));
 }
 export async function cancelRun(): Promise<void> {
   await fetch('/__fleet/livetest', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'cancel' }) }).catch(() => {});
+}
+/** Fetch + ff-pull latest origin/main into the opened agent's repo (worktree). */
+export async function pullMainRepo(paneId: string): Promise<{ ok?: boolean; output?: string; error?: string }> {
+  const res = await fetch('/__fleet/livetest', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'pull-main', paneId }),
+  });
+  return res.json().catch(() => ({ error: `pull ${res.status}` }));
 }

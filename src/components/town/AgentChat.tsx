@@ -334,7 +334,7 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
           onClose={() => setManaging(false)}
         />
       )}
-      {showLiveTest && <LiveTestPanel onClose={() => setShowLiveTest(false)} />}
+      {showLiveTest && <LiveTestPanel agent={agent} onClose={() => setShowLiveTest(false)} />}
       {showHandoffs && <HandoffMenu paneId={agent.paneId} onClose={() => setShowHandoffs(false)} />}
       {showReader && <MessageReader paneId={agent.paneId} title={`${cos.title}${agent.label && agent.label !== 'oracle' ? '·' + agent.label : ''}`} onClose={() => setShowReader(false)} />}
       {variantOpen && (
