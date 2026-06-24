@@ -29,6 +29,7 @@ interface Actor {
   pinned?: boolean; // dragged to a fixed spot — stops wandering / re-clamping
   paneId?: string;  // stable tmux pane id — to match links/notes
   idleSince?: number; // ms when it last stopped working (for the linked-stall aura)
+  bg?: boolean;     // working only because of a background shell → parked, doesn't pace
 }
 const IDLE_AURA_MS = 60_000; // linked agent idle this long → stall aura
 
@@ -39,7 +40,7 @@ const DRAG_PAUSE_MS = 2000; // after a drop, the sprite stands here this long, t
 function pickTarget(a: Actor) {
   a.tx = rnd(a.home.x, a.home.x + Math.max(1, a.home.w - SPRITE));
   a.ty = rnd(a.home.y, a.home.y + Math.max(1, a.home.h - SPRITE));
-  a.waitT = rnd(300, 1600); // pause on arrival
+  a.waitT = rnd(2200, 6500); // rest a good while on arrival → calm amble, not non-stop pacing
 }
 
 export function PixelTown(
@@ -181,14 +182,14 @@ export function PixelTown(
       const home = place.home;
       let act = actors.current.get(a.id);
       if (!act) {
-        act = { id: a.id, x: rnd(home.x, home.x + home.w - SPRITE), y: rnd(home.y, home.y + home.h - SPRITE), tx: 0, ty: 0, dir: 0, frame: 0, frameT: 0, waitT: rnd(0, 800), status: a.status, charIndex: charIndexFor(a.role), home, paneId: a.paneId };
+        act = { id: a.id, x: rnd(home.x, home.x + home.w - SPRITE), y: rnd(home.y, home.y + home.h - SPRITE), tx: 0, ty: 0, dir: 0, frame: 0, frameT: 0, waitT: rnd(0, 1200), status: a.status, charIndex: charIndexFor(a.role), home, paneId: a.paneId, bg: a.bg };
         pickTarget(act);
         actors.current.set(a.id, act);
       } else {
         // Zones rebuild every poll; only re-target when the rect VALUE changed,
         // else a stale target may sit outside the new home and pin the sprite to a wall.
         const moved = act.home.x !== home.x || act.home.y !== home.y || act.home.w !== home.w || act.home.h !== home.h;
-        act.status = a.status; act.home = home; act.charIndex = charIndexFor(a.role); act.paneId = a.paneId;
+        act.status = a.status; act.home = home; act.charIndex = charIndexFor(a.role); act.paneId = a.paneId; act.bg = a.bg;
         if (!act.pinned) {
           act.x = clamp(act.x, home.x, home.x + Math.max(0, home.w - SPRITE));
           act.y = clamp(act.y, home.y, home.y + Math.max(0, home.h - SPRITE));
@@ -220,7 +221,7 @@ export function PixelTown(
       // neighbours apart until they're spaced out — no manual dragging. Workers
       // re-place themselves below; dragged sprites are left alone.
       const SEP = SPRITE * 0.85;
-      const standing = [...actors.current.values()].filter((a) => a.status !== 'working' && !a.pinned);
+      const standing = [...actors.current.values()].filter((a) => (a.status !== 'working' || a.bg) && !a.pinned);
       for (let i = 0; i < standing.length; i++) {
         const a = standing[i];
         const maxX = a.home.x + Math.max(0, a.home.w - SPRITE), maxY = a.home.y + Math.max(0, a.home.h - SPRITE);
@@ -239,7 +240,7 @@ export function PixelTown(
       for (const act of actors.current.values()) {
         const el = els.current.get(act.id);
         if (!el) continue;
-        if (act.status === 'working' && !act.pinned) {
+        if (act.status === 'working' && !act.pinned && !act.bg) {
           if (act.waitT > 0) { act.waitT -= dt; act.frame = 0; }
           else {
             const dx = act.tx - act.x, dy = act.ty - act.y;
