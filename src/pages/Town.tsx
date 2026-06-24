@@ -169,7 +169,7 @@ export function Town() {
         <p className="text-center text-white/40 py-12">no agent panes found in tmux.</p>
       )}
 
-      <SyncHud state={verify.state} refresh={verify.refresh} />
+      <SyncHud state={verify.state} refresh={verify.refresh} deploying={deploying} />
     </div>
   );
 }

@@ -18,6 +18,16 @@
   position: fixed; top: 64px; right: 12px; z-index: 40;
   font-size: 11px; color: #cbd5e1;
 }
+/* While a deploy is in flight the status panel vibrates (staging is changing). */
+@keyframes town-hud-shake {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-1.5px, 1px) rotate(-0.4deg); }
+  40% { transform: translate(1.5px, -1px) rotate(0.4deg); }
+  60% { transform: translate(-1px, -1px) rotate(-0.3deg); }
+  80% { transform: translate(1px, 1px) rotate(0.3deg); }
+}
+.town-hud-shake { animation: town-hud-shake 0.32s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .town-hud-shake { animation: none; } }
 .town-hud-pill {
   display: inline-flex; align-items: center; gap: 6px;
   background: #14101eee; border: 1px solid #ffffff1f; border-radius: 999px;
