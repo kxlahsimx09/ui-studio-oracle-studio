@@ -43,6 +43,7 @@ const LABELS: Record<string, { name: string; group: CheckGroup }> = {
   'clock/reset rpcs': { name: 'Clock / reset RPCs', group: 'service' },
   'admin-ui alias': { name: 'Admin UI portal', group: 'service' },
   'bank-bot fleet': { name: 'Bank-bot deploy', group: 'service' }, // last deploy.yml roll
+  'mock-portal cur': { name: 'Mock portal · currency', group: 'sync' }, // portals serving latest main (#846)
 };
 
 function classify(v: string): CheckState {
