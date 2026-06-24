@@ -8,8 +8,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
-import { SUITES, GLOBAL_CONTROLS, suiteById, buildEnv } from './livetest-catalog';
-import { infoForControl } from './livetest-info';
+import { loadCatalog, type Catalog, type Suite } from './livetest-catalog';
 import { getFleetState } from './fleet-probe';
 
 interface Cfg { integrationDir: string; lockScript: string; agent: string }
@@ -41,13 +40,6 @@ function repoRootForPane(paneId?: string, fallbackIntegrationDir?: string): stri
   if (root) return root;
   return fallbackIntegrationDir ? join(fallbackIntegrationDir, '..', '..') : null;
 }
-function integrationDirForPane(paneId: string | undefined, fallback: string): string {
-  const root = repoRootForPane(paneId);
-  if (!root) return fallback;
-  const dir = join(root, 'poc/integration');
-  return existsSync(dir) ? dir : fallback;
-}
-
 export interface RunState {
   status: 'idle' | 'running' | 'done';
   suite?: string; campaign?: string; startedAt?: number; endedAt?: number;
@@ -61,17 +53,19 @@ let child: ChildProcess | null = null;
 const LOG_MAX = 500;
 const push = (line: string) => { run.log.push(line); if (run.log.length > LOG_MAX) run.log.splice(0, run.log.length - LOG_MAX); };
 
-// Enrich each control with its ⓘ leg-info (What/Why/How/Verify) so the panel can
-// render an info popover next to the checkbox. Controls without mapped legs are
-// passed through unchanged (no ⓘ).
-export const getCatalog = () => SUITES.map((s) => ({
-  ...s,
-  controls: s.controls.map((c) => {
-    const info = infoForControl(s.id, c.env);
-    return info.length ? { ...c, info } : c;
-  }),
-}));
-export const getGlobals = () => GLOBAL_CONTROLS;
+// Candidate repo roots for a run: the opened agent's worktree first, then the
+// primary gateway checkout — so the menu/run prefer the agent's own code but still
+// work when its worktree is behind (no catalog yet → fall back to primary).
+function candidateRoots(paneId?: string): string[] {
+  const c = cfg();
+  const primary = join(c.integrationDir, '..', '..');
+  const wt = repoRootForPane(paneId);
+  return wt ? [wt, primary] : [primary];
+}
+const catalogFor = (paneId?: string): Catalog => loadCatalog(candidateRoots(paneId));
+
+/** The card catalog (+summary) the panel renders, read from the agent's repo. */
+export const getCatalog = (paneId?: string) => { const c = catalogFor(paneId); return { suites: c.suites, summary: c.summary }; };
 export const getRun = (): RunState => run;
 
 async function nltPane(agent: string): Promise<string> {
@@ -88,21 +82,18 @@ async function nltPane(agent: string): Promise<string> {
 export async function startRun(suiteId: string, raw: Record<string, unknown>, campaign = 'livetest', paneId?: string):
   Promise<{ ok: true } | { error: string } | { held: unknown }> {
   if (run.status === 'running') return { error: 'a run is already in progress' };
-  const s = suiteById(suiteId);
-  if (!s) return { error: `unknown suite ${suiteId}` };
-  let env: Record<string, string>;
-  try { env = buildEnv(suiteId, raw); } catch (e) { return { error: (e as Error).message }; }
-
   const c = cfg();
-  const dir = integrationDirForPane(paneId, c.integrationDir); // the agent's worktree (fallback: primary)
-  const launcher = join(dir, s.launcher);
-  if (!existsSync(launcher)) return { error: `launcher not found: ${launcher}` };
+  const cat = catalogFor(paneId);
+  const s: Suite | undefined = cat.suites.find((x) => x.id === suiteId);
+  if (!cat.root || !s) return { error: `card ${suiteId} not found in the catalog (pull main on this agent?)` };
+  if (!s.runnable || !s.command) return { error: `card ${suiteId} is not runnable: ${s.reason || 'no run command'}` };
+  const dir = join(cat.root, 'poc/integration');
 
   const pane = paneId || await nltPane(c.agent);
   const lockEnv = { ...process.env, ...(pane ? { TMUX_PANE: pane } : {}) } as Record<string, string>;
   // Acquire the staging lock AS next-live-tester. Exit 3 = held by another.
   try {
-    execFileSync('bash', [c.lockScript, 'acquire', '--agent', c.agent, '--campaign', campaign, '--reason', `suite ${suiteId}`],
+    execFileSync('bash', [c.lockScript, 'acquire', '--agent', c.agent, '--campaign', campaign, '--reason', `card ${suiteId}`],
       { env: lockEnv, encoding: 'utf8', timeout: 15000 });
   } catch (e) {
     const ex = e as { status?: number };
@@ -110,9 +101,15 @@ export async function startRun(suiteId: string, raw: Record<string, unknown>, ca
     return { error: `lock acquire failed: ${(e as Error).message.slice(0, 120)}` };
   }
 
+  // systemd's PATH is minimal; the run scripts need bun/node + user bins.
+  const extra = [join(homedir(), '.bun/bin'), join(homedir(), '.local/bin'), join(homedir(), 'go/bin')];
+  const runEnv = { ...process.env, PATH: [...extra, process.env.PATH || ''].filter(Boolean).join(':'), CAMPAIGN: campaign, ...(pane ? { TMUX_PANE: pane } : {}) } as Record<string, string>;
+  void raw; // cards carry no per-run controls now — the env is baked into exec.command
+
   run = { status: 'running', suite: suiteId, campaign, startedAt: Date.now(), log: [], exitCode: null };
-  push(`▶ launching ${s.launcher} in ${dir.replace(homedir(), '~')}  (${Object.entries(env).map(([k, v]) => `${k}=${v}`).join(' ') || 'defaults — DRY-VALIDATE'})`);
-  const proc = spawn('bash', [launcher], { cwd: dir, env: { ...process.env, ...env, ...(pane ? { TMUX_PANE: pane } : {}) } });
+  push(`▶ ${s.id} · ${s.title}`);
+  push(`$ ${s.command}   (cwd ${dir.replace(homedir(), '~')})`);
+  const proc = spawn('bash', ['-c', s.command], { cwd: dir, env: runEnv });
   child = proc; run.pid = proc.pid;
   const onData = (b: Buffer) => b.toString().split('\n').forEach((l) => l && push(l));
   proc.stdout?.on('data', onData);

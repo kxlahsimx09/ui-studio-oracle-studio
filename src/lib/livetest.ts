@@ -3,37 +3,39 @@
 // (lock-aware), POST {action:'cancel'} kills the active run.
 import { useEffect, useRef, useState } from 'react';
 
-export interface LegInfo { id: string; title?: string; ac?: string; what: string; why: string; how: string; verify: string }
-export interface Control {
-  env: string; label: string; type: 'toggle' | 'number' | 'text' | 'select';
-  def?: string; options?: string[]; help?: string; danger?: boolean;
-  info?: LegInfo[];   // per-leg What/Why/How/Verify for the ⓘ popover (server-enriched)
-}
+// A card from the v2 journey catalog JSON (server reads it from the agent's repo).
 export interface Suite {
-  id: string; label: string; launcher: string; runtime: string; gate: string;
-  ownerGated?: boolean; controls: Control[];
+  id: string; label: string; title: string;
+  command: string; speed: string;          // FAST | SLOW | OTHER
+  epic?: string; state?: string; result?: string | null;
+  runnable: boolean; reason?: string;       // not_runnable_reason
+  ownerGated?: boolean; ownerGoEnv?: string;
+  optionalEnv?: { name: string; description?: string }[];
+  cast?: string;
 }
 export interface RunState {
   status: 'idle' | 'running' | 'done';
   suite?: string; campaign?: string; startedAt?: number; endedAt?: number;
   exitCode?: number | null; log: string[]; legs?: unknown; evidenceDir?: string; error?: string;
 }
-export interface LiveTest { suites: Suite[]; globals: Control[]; run: RunState }
+export interface CatalogSummary { total_cards?: number; runnable?: number; green?: number;
+  by_speed?: Record<string, number>; fast_regression_roster?: string[] }
+export interface LiveTest { suites: Suite[]; summary?: CatalogSummary | null; run: RunState }
 
-export function useLiveTest(open: boolean): { data: LiveTest | null; reload: () => void } {
+export function useLiveTest(open: boolean, paneId?: string): { data: LiveTest | null; reload: () => void } {
   const [data, setData] = useState<LiveTest | null>(null);
   const tick = useRef<() => void>(() => {});
+  const url = `/__fleet/livetest${paneId ? `?pane=${encodeURIComponent(paneId)}` : ''}`;
   useEffect(() => {
     if (!open) return;
     let alive = true;
-    const load = () => fetch('/__fleet/livetest').then((r) => r.json()).then((d) => { if (alive) setData(d); }).catch(() => {});
+    const load = () => fetch(url).then((r) => r.json()).then((d) => { if (alive) setData(d); }).catch(() => {});
     tick.current = load;
     load();
-    // poll fast while a run streams, slow otherwise
     const id = setInterval(() => { const running = data?.run?.status === 'running'; if (running || !data) load(); }, 2000);
     const slow = setInterval(load, 8000);
     return () => { alive = false; clearInterval(id); clearInterval(slow); };
-  }, [open, data?.run?.status]);
+  }, [open, url, data?.run?.status]);
   return { data, reload: () => tick.current() };
 }
 
