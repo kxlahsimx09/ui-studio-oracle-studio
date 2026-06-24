@@ -53,7 +53,8 @@ export function Town() {
   const [showDeploy, setShowDeploy] = useState(false);
   const deploying = useDeployRunning();
   const verify = useVerify();
-  const stagingOutOfSync = !!verify.state?.checks?.some((c) => c.state === 'stale' || c.state === 'fail');
+  // statue alarms on DEPLOY out-of-sync (currency), not a service being down.
+  const stagingOutOfSync = !!verify.state?.checks?.some((c) => c.group === 'sync' && (c.state === 'stale' || c.state === 'fail'));
   const { links, reload: reloadLinks } = useAgentLinks(4000);
   const { notes, reload: reloadNotes } = useAgentNotes(4000);
   const polledLock = useLock(4000);

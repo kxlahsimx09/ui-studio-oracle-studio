@@ -4,7 +4,8 @@
 import { useEffect, useRef, useState } from 'react';
 
 export type CheckState = 'ok' | 'stale' | 'fail' | 'warn' | 'unknown' | 'skipped';
-export interface VerifyCheck { label: string; state: CheckState; detail: string }
+export type CheckGroup = 'sync' | 'service';
+export interface VerifyCheck { label: string; state: CheckState; detail: string; group: CheckGroup }
 export interface VerifyState {
   status: 'idle' | 'running' | 'done';
   ranAt?: number; exitCode?: number | null;

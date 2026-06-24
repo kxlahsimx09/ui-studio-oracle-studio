@@ -39,7 +39,11 @@
 .town-hud-btn:hover { background: #ffffff1c; }
 .town-hud-btn:disabled { opacity: 0.4; cursor: default; }
 .town-hud-rows { display: flex; flex-direction: column; gap: 3px; }
-.town-hud-row { display: flex; align-items: center; gap: 6px; }
+.town-hud-section { display: flex; flex-direction: column; gap: 3px; margin-bottom: 6px; }
+.town-hud-subhead { display: flex; align-items: center; gap: 6px; margin: 2px 0 1px; }
+.town-hud-subtitle { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #8b97a8; }
+.town-hud-substate { margin-left: auto; font-size: 9px; font-weight: 700; letter-spacing: 0.03em; }
+.town-hud-row { display: flex; align-items: center; gap: 6px; padding-left: 2px; }
 .town-hud-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #aab4c4; }
 .town-hud-state { font-size: 9px; text-transform: uppercase; letter-spacing: 0.03em; }
 .town-hud-empty { color: #64748b; font-size: 10px; padding: 2px 0; }

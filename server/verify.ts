@@ -20,7 +20,8 @@ function runEnv(): Record<string, string> {
 }
 
 export type CheckState = 'ok' | 'stale' | 'fail' | 'warn' | 'unknown' | 'skipped';
-export interface VerifyCheck { label: string; state: CheckState; detail: string }
+export type CheckGroup = 'sync' | 'service';
+export interface VerifyCheck { label: string; state: CheckState; detail: string; group: CheckGroup }
 export interface VerifyState {
   status: 'idle' | 'running' | 'done';
   ranAt?: number; exitCode?: number | null;
@@ -29,17 +30,19 @@ export interface VerifyState {
   ok?: boolean;       // exit 0 = READY/CURRENT
 }
 
-// label as printed by verify-staging.sh / stack-freshness.sh → friendly name
-const LABELS: Record<string, string> = {
-  'migrations': 'Migrations',
-  'edge-funcs': 'Edge functions',
-  'cf-worker': 'CF worker',
-  'admin-ui': 'Admin UI · currency',
-  'bank-bot': 'Bank-bot · currency',       // stack-freshness currency leg
-  'deposits-create': 'deposits-create EF',
-  'clock/reset rpcs': 'Clock / reset RPCs',
-  'admin-ui alias': 'Admin UI · alias',
-  'bank-bot fleet': 'Bank-bot · fleet',    // verify readiness: last deploy.yml roll
+// label as printed by verify-staging.sh / stack-freshness.sh → friendly name + group.
+// sync   = currency (is the deployed substrate current vs main? → "out of sync").
+// service = liveness/readiness probe (is the running service healthy?).
+const LABELS: Record<string, { name: string; group: CheckGroup }> = {
+  'migrations': { name: 'Migrations', group: 'sync' },
+  'edge-funcs': { name: 'Edge functions', group: 'sync' },
+  'cf-worker': { name: 'CF worker', group: 'sync' },
+  'admin-ui': { name: 'Admin UI', group: 'sync' },
+  'bank-bot': { name: 'Bank-bot fleet', group: 'sync' },        // currency of the deployed image
+  'deposits-create': { name: 'deposits-create EF', group: 'service' },
+  'clock/reset rpcs': { name: 'Clock / reset RPCs', group: 'service' },
+  'admin-ui alias': { name: 'Admin UI portal', group: 'service' },
+  'bank-bot fleet': { name: 'Bank-bot deploy', group: 'service' }, // last deploy.yml roll
 };
 
 function classify(v: string): CheckState {
@@ -63,10 +66,10 @@ function parse(log: string[]): { checks: VerifyCheck[]; verdict?: string } {
     if (!m) continue;
     const key = m[1].trim().toLowerCase();
     // mock-portal probes are dynamic per bank ("mock-portal SCB", "mock-portal KTB").
-    const name = LABELS[key]
-      ?? (key.startsWith('mock-portal ') ? `Mock portal · ${key.slice(12).toUpperCase()}` : undefined);
-    if (!name) continue;
-    map.set(name, { label: name, state: classify(m[2]), detail: m[2].trim() }); // last line wins
+    const def = LABELS[key]
+      ?? (key.startsWith('mock-portal ') ? { name: `Mock portal · ${key.slice(12).toUpperCase()}`, group: 'service' as const } : undefined);
+    if (!def) continue;
+    map.set(def.name, { label: def.name, group: def.group, state: classify(m[2]), detail: m[2].trim() }); // last line wins
   }
   return { checks: [...map.values()], verdict };
 }
