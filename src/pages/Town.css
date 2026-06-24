@@ -239,22 +239,35 @@
    shoots up with a wobble and fades into the sky, 🔥 exhaust at its base. Plays
    once (Town clears it after ~2.7s, statue drops back in). translate/rotate are
    the individual props so they compose with the inline positioning transform. */
+/* Straight vertical ascent — no tilt, no lateral drift; only a small ±2px
+   vibration (centred on x=0) so it reads as a rumbling rocket going straight up. */
 @keyframes town-statue-launch {
-  0%   { translate: 0 0; rotate: 0deg; opacity: 1; }
-  8%   { translate: -3px 1px; rotate: -3deg; }
-  16%  { translate: 3px 1px; rotate: 3deg; }
-  24%  { translate: -3px 0; rotate: -3deg; }
-  32%  { translate: 3px -8px; rotate: 2deg; }
-  46%  { translate: -2px -110px; rotate: -4deg; opacity: 1; }
-  72%  { translate: 3px -360px; rotate: 4deg; opacity: 0.9; }
-  100% { translate: 0 -760px; rotate: -3deg; opacity: 0; }
+  0%   { translate: 0 0; opacity: 1; }
+  6%   { translate: -2px 0; }
+  12%  { translate: 2px -2px; }
+  18%  { translate: -2px -6px; }
+  24%  { translate: 2px -14px; }
+  30%  { translate: -1.5px -44px; }
+  50%  { translate: 1.5px -160px; }
+  70%  { translate: -1.5px -370px; opacity: 1; }
+  86%  { translate: 1.5px -580px; opacity: 0.85; }
+  100% { translate: 0 -800px; opacity: 0; }
 }
-.town-deco-launch { animation: town-statue-launch 2.4s cubic-bezier(0.5,0,0.85,1) forwards; z-index: 5; }
+.town-deco-launch { animation: town-statue-launch 2.4s cubic-bezier(0.55,0,0.85,1) forwards; z-index: 5; }
+/* Exhaust plume — a wide cluster at the base (::before) + a trailing puff below
+   (::after), both flickering out of phase. */
 .town-deco-launch::before {
-  content: '🔥'; position: absolute; left: 50%; bottom: -12px; translate: -50% 0;
-  font-size: 26px; line-height: 1; animation: town-flame 0.1s steps(2) infinite;
+  content: '🔥🔥🔥🔥'; position: absolute; left: 50%; bottom: -16px; translate: -50% 0;
+  font-size: 30px; line-height: 1; letter-spacing: -8px; white-space: nowrap;
+  filter: drop-shadow(0 4px 6px rgba(251,146,60,0.7));
+  animation: town-flame 0.09s steps(2) infinite;
 }
-@keyframes town-flame { from { opacity: 1; scale: 1; } to { opacity: 0.65; scale: 1.3; } }
+.town-deco-launch::after {
+  content: '🔥🔥🔥'; position: absolute; left: 50%; bottom: -38px; translate: -50% 0;
+  font-size: 22px; line-height: 1; letter-spacing: -6px; white-space: nowrap; opacity: 0.85;
+  animation: town-flame 0.11s steps(2) infinite reverse;
+}
+@keyframes town-flame { from { opacity: 1; scale: 1 1.1; } to { opacity: 0.6; scale: 1.25 1.45; } }
 
 /* Deploy FAILED → the statue topples over (tilts to the ground from its base) +
    a red glow. Holds toppled until Town clears it (~3.6s), then stands back up. */
@@ -270,7 +283,7 @@
   filter: drop-shadow(0 0 7px rgba(248,113,113,0.8));
 }
 @media (prefers-reduced-motion: reduce) {
-  .town-deco-launch, .town-deco-launch::before, .town-deco-fall { animation: none; }
+  .town-deco-launch, .town-deco-launch::before, .town-deco-launch::after, .town-deco-fall { animation: none; }
 }
 /* Bottom-anchored above the sprite + flex column → it grows UPWARD and handles a
    variable number of rows (crown / name / ctx% / account) cleanly. Each field is
