@@ -214,6 +214,27 @@ export function PixelTown(
     const tick = (t: number) => {
       const dt = last ? Math.min(60, t - last) : 16; last = t;
       const nowMs = Date.now();
+      // De-overlap STANDING sprites: a team dissolve / re-align can stack idle
+      // agents on one spot (only workers wander apart). Gently push same-zone
+      // neighbours apart until they're spaced out — no manual dragging. Workers
+      // re-place themselves below; dragged sprites are left alone.
+      const SEP = SPRITE * 0.85;
+      const standing = [...actors.current.values()].filter((a) => a.status !== 'working' && !a.pinned);
+      for (let i = 0; i < standing.length; i++) {
+        const a = standing[i];
+        const maxX = a.home.x + Math.max(0, a.home.w - SPRITE), maxY = a.home.y + Math.max(0, a.home.h - SPRITE);
+        for (let j = i + 1; j < standing.length; j++) {
+          const b = standing[j];
+          if (a.home !== b.home) continue; // same zone only (shared rect ref per cluster)
+          let dx = a.x - b.x, dy = a.y - b.y, dist = Math.hypot(dx, dy);
+          if (dist >= SEP) continue;
+          if (dist < 0.01) { dx = (i % 2 ? 1 : -1); dy = (j % 2 ? 1 : -1); dist = Math.hypot(dx, dy); } // exactly stacked → deterministic split
+          const k = ((SEP - dist) / dist) * 0.18 * (dt / 16); // ≤ ~2.5px/frame → converges fast, no teleport
+          const mx = dx * k, my = dy * k;
+          a.x = clamp(a.x + mx, a.home.x, maxX); a.y = clamp(a.y + my, a.home.y, maxY);
+          b.x = clamp(b.x - mx, b.home.x, maxX); b.y = clamp(b.y - my, b.home.y, maxY);
+        }
+      }
       for (const act of actors.current.values()) {
         const el = els.current.get(act.id);
         if (!el) continue;
