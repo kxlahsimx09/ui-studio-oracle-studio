@@ -16,7 +16,7 @@ function ago(ts?: number): string {
   return s < 60 ? `${s}s ago` : `${Math.floor(s / 60)}m ago`;
 }
 
-export function SyncHud({ state, refresh, deploying = false }: { state: VerifyState | null; refresh: () => void; deploying?: boolean }) {
+export function SyncHud({ state, refresh }: { state: VerifyState | null; refresh: () => void }) {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(KEY) === '1');
   const setCol = (v: boolean) => { setCollapsed(v); localStorage.setItem(KEY, v ? '1' : '0'); };
 
@@ -24,24 +24,23 @@ export function SyncHud({ state, refresh, deploying = false }: { state: VerifySt
   const bad = state?.checks?.some((c) => c.state === 'stale' || c.state === 'fail');
   // overall: red if any substrate out of sync/failing, green if verify passed, grey unknown
   const overall: CheckState = bad ? 'stale' : state?.ok ? 'ok' : 'unknown';
-  const shake = deploying ? ' town-hud-shake' : ''; // a deploy in flight is changing this
 
   if (collapsed) {
     return (
-      <button className={`town-hud town-hud-pill${shake}`} onClick={() => setCol(false)} title="show staging sync status">
+      <button className="town-hud town-hud-pill" onClick={() => setCol(false)} title="show staging sync status">
         <span className="town-hud-dot" style={{ background: DOT[overall], boxShadow: `0 0 6px ${DOT[overall]}` }} />
-        sync{deploying ? ' 🚀' : running ? ' …' : ''}
+        sync{running ? ' …' : ''}
       </button>
     );
   }
 
   return (
-    <div className={`town-hud town-hud-card${shake}`}>
+    <div className="town-hud town-hud-card">
       <div className="town-hud-head">
         <span className="town-hud-dot" style={{ background: DOT[overall], boxShadow: `0 0 6px ${DOT[overall]}` }} />
         <b>staging sync</b>
-        <span className="town-hud-verdict" style={{ color: deploying ? '#fbbf24' : bad ? '#fca5a5' : state?.ok ? '#86efac' : '#94a3b8' }}>
-          {deploying ? '🚀 deploying…' : running ? 'checking…' : bad ? 'OUT OF SYNC' : state?.ok ? 'in sync' : '—'}
+        <span className="town-hud-verdict" style={{ color: bad ? '#fca5a5' : state?.ok ? '#86efac' : '#94a3b8' }}>
+          {running ? 'checking…' : bad ? 'OUT OF SYNC' : state?.ok ? 'in sync' : '—'}
         </span>
         <span style={{ flex: 1 }} />
         <button className="town-hud-btn" onClick={refresh} disabled={running} title="re-run verify-staging.sh now">⟳</button>

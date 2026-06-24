@@ -18,16 +18,6 @@
   position: fixed; top: 64px; right: 12px; z-index: 40;
   font-size: 11px; color: #cbd5e1;
 }
-/* While a deploy is in flight the status panel vibrates (staging is changing). */
-@keyframes town-hud-shake {
-  0%, 100% { transform: translate(0, 0); }
-  20% { transform: translate(-1.5px, 1px) rotate(-0.4deg); }
-  40% { transform: translate(1.5px, -1px) rotate(0.4deg); }
-  60% { transform: translate(-1px, -1px) rotate(-0.3deg); }
-  80% { transform: translate(1px, 1px) rotate(0.3deg); }
-}
-.town-hud-shake { animation: town-hud-shake 0.32s linear infinite; }
-@media (prefers-reduced-motion: reduce) { .town-hud-shake { animation: none; } }
 .town-hud-pill {
   display: inline-flex; align-items: center; gap: 6px;
   background: #14101eee; border: 1px solid #ffffff1f; border-radius: 999px;
@@ -223,6 +213,20 @@
   50%      { filter: drop-shadow(0 0 12px rgba(248,113,113,0.95)) drop-shadow(0 0 22px rgba(251,146,60,0.6)); }
 }
 @media (prefers-reduced-motion: reduce) { .town-deco-alarm { animation: none; filter: drop-shadow(0 0 9px rgba(248,113,113,0.85)); } }
+/* The statue shakes while a deploy is in flight. Jitter via the `translate`
+   property so it COMPOSES with the inline `transform: translate(x,y)` that places
+   the statue on the field (animating `transform` would fling it to 0,0). */
+@keyframes town-statue-shake {
+  0%, 100% { translate: 0 0; }
+  20% { translate: -2px 1px; }
+  40% { translate: 2px -1px; }
+  60% { translate: -1px -2px; }
+  80% { translate: 1px 2px; }
+}
+.town-deco-shake { animation: town-statue-shake 0.3s linear infinite; }
+/* Out-of-sync AND deploying at once → run both (glow pulse + jitter). */
+.town-deco-alarm.town-deco-shake { animation: town-statue-alarm 1.4s ease-in-out infinite, town-statue-shake 0.3s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .town-deco-shake, .town-deco-alarm.town-deco-shake { animation: none; } }
 /* Bottom-anchored above the sprite + flex column → it grows UPWARD and handles a
    variable number of rows (crown / name / ctx% / account) cleanly. Each field is
    its own row, so a long 🔑account can never push ctx% off (the pinned-agent bug). */

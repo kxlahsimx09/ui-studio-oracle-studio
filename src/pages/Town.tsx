@@ -147,7 +147,7 @@ export function Town() {
         </div>
       )}
 
-      {view === 'map' && <PixelTown state={state} onSelect={openAgent} lock={lock} onLockClick={() => setShowLock(true)} links={links} reloadLinks={reloadLinks} notes={notes} reloadNotes={reloadNotes} stagingOutOfSync={stagingOutOfSync} />}
+      {view === 'map' && <PixelTown state={state} onSelect={openAgent} lock={lock} onLockClick={() => setShowLock(true)} links={links} reloadLinks={reloadLinks} notes={notes} reloadNotes={reloadNotes} stagingOutOfSync={stagingOutOfSync} deploying={deploying} />}
 
       {view === 'list' && (
         <div className="flex flex-col gap-3">
@@ -169,7 +169,7 @@ export function Town() {
         <p className="text-center text-white/40 py-12">no agent panes found in tmux.</p>
       )}
 
-      <SyncHud state={verify.state} refresh={verify.refresh} deploying={deploying} />
+      <SyncHud state={verify.state} refresh={verify.refresh} />
     </div>
   );
 }

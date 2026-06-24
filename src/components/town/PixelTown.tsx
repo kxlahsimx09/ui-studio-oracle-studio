@@ -43,10 +43,10 @@ function pickTarget(a: Actor) {
 }
 
 export function PixelTown(
-  { state, onSelect, lock, onLockClick, links = [], reloadLinks, notes = {}, reloadNotes, stagingOutOfSync = false }:
+  { state, onSelect, lock, onLockClick, links = [], reloadLinks, notes = {}, reloadNotes, stagingOutOfSync = false, deploying = false }:
   { state: FleetState; onSelect: (a: FleetAgent) => void; lock?: LockState | null; onLockClick?: () => void;
     links?: AgentLink[]; reloadLinks?: () => void;
-    notes?: Record<string, string>; reloadNotes?: () => void; stagingOutOfSync?: boolean },
+    notes?: Record<string, string>; reloadNotes?: () => void; stagingOutOfSync?: boolean; deploying?: boolean },
 ) {
   const districts = useMemo(() => groupTown(state), [state]);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -355,8 +355,8 @@ export function PixelTown(
     <div ref={stageRef} className="town-stage" style={{ width: stage.width, height: stage.height }}>
       {/* Ambient scenery — pure decoration on the grass, behind every agent. */}
       {props.decos.map((d) => (
-        <div key={d.id} className={`town-deco${d.id === 'landmark' && stagingOutOfSync ? ' town-deco-alarm' : ''}`}
-          title={d.id === 'landmark' && stagingOutOfSync ? 'staging is OUT OF SYNC — see the sync HUD' : undefined}
+        <div key={d.id} className={`town-deco${d.id === 'landmark' && stagingOutOfSync ? ' town-deco-alarm' : ''}${d.id === 'landmark' && deploying ? ' town-deco-shake' : ''}`}
+          title={d.id === 'landmark' && deploying ? 'deploying…' : d.id === 'landmark' && stagingOutOfSync ? 'staging is OUT OF SYNC — see the sync HUD' : undefined}
           style={{
           width: d.spec.w, height: d.spec.h,
           backgroundImage: `url(${d.spec.url})`, backgroundSize: `${d.spec.w}px ${d.spec.h}px`,
