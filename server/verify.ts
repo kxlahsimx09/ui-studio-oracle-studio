@@ -48,10 +48,12 @@ const LABELS: Record<string, { name: string; group: CheckGroup }> = {
 
 function classify(v: string): CheckState {
   const u = v.toUpperCase();
-  if (u.includes('STALE') || u.includes('MISSING')) return 'stale';
-  if (u.includes('FAIL')) return 'fail';
+  // skip/unknown FIRST: a skip message may mention "staleness" ("not a staleness
+  // signal") and must not be misread as STALE.
   if (u.includes('SKIP')) return 'skipped';
   if (u.includes('UNKNOWN')) return 'unknown';
+  if (u.includes('STALE') || u.includes('MISSING')) return 'stale';
+  if (u.includes('FAIL')) return 'fail';
   if (u.includes('WARN')) return 'warn';
   if (u.startsWith('OK') || u.includes('CURRENT')) return 'ok';
   return 'unknown';
