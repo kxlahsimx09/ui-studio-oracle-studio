@@ -12,6 +12,7 @@ import { loadPresets, savePresets, PROMPT_MARK, type ChatPreset } from '../../li
 import { PresetManager } from './PresetManager';
 import { LiveTestPanel } from './LiveTestPanel';
 import { HandoffMenu } from './HandoffMenu';
+import { MessageReader } from './MessageReader';
 
 const NAV_KEYS: Array<[string, string]> = [['↑', 'up'], ['↓', 'down'], ['←', 'left'], ['→', 'right']];
 type Tab = 'history' | 'live';
@@ -56,6 +57,7 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
   const [variantOpen, setVariantOpen] = useState(false);
   const [carrying, setCarrying] = useState(false);
   const [showHandoffs, setShowHandoffs] = useState(false);
+  const [showReader, setShowReader] = useState(false);
 
   // Carry over to a fresh clean session (the old one writes a brief file; the fresh
   // agent reads it + continues). For when context runs low. ~minute, runs server-side.
@@ -236,6 +238,9 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
           <button onClick={doCarryOver} disabled={carrying} className="ml-1 text-[10px] px-1.5 py-0.5 rounded disabled:opacity-40"
             style={{ background: '#22d3ee22', color: '#67e8f9', border: '1px solid #22d3ee55' }}
             title="context low? hand off to a fresh clean-context agent, briefed from this session">{carrying ? '↪ …' : '↪ carry over'}</button>
+          <button onClick={() => setShowReader(true)} className="ml-1 text-[10px] px-1.5 py-0.5 rounded"
+            style={{ background: '#22c55e22', color: '#86efac', border: '1px solid #22c55e55' }}
+            title="open the latest message in a clean reader (← backward to earlier messages)">📖 read</button>
           <button onClick={() => setShowHandoffs(true)} className="ml-1 text-[10px] px-1.5 py-0.5 rounded"
             style={{ background: '#38bdf822', color: '#7dd3fc', border: '1px solid #38bdf855' }}
             title="find handoff file paths mentioned in this session and copy one">📂 handoffs</button>
@@ -331,6 +336,7 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
       )}
       {showLiveTest && <LiveTestPanel onClose={() => setShowLiveTest(false)} />}
       {showHandoffs && <HandoffMenu paneId={agent.paneId} onClose={() => setShowHandoffs(false)} />}
+      {showReader && <MessageReader paneId={agent.paneId} title={`${cos.title}${agent.label && agent.label !== 'oracle' ? '·' + agent.label : ''}`} onClose={() => setShowReader(false)} />}
       {variantOpen && (
         <VariantPicker
           label={`${cos.title}${agent.label && agent.label !== 'oracle' ? '·' + agent.label : ''}`}
