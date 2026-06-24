@@ -389,8 +389,7 @@ export function PixelTown(
           transform: `translate(${d.x}px, ${d.y}px)`,
         }} />
         );
-      })
-      ))}
+      })}
       {props.anims.map((a) => {
         const k = a.spec.size / a.spec.fw;
         return (
