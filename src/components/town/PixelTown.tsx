@@ -43,11 +43,11 @@ function pickTarget(a: Actor) {
 }
 
 export function PixelTown(
-  { state, onSelect, lock, onLockClick, links = [], reloadLinks, notes = {}, reloadNotes, stagingOutOfSync = false, deploying = false, onOpenDeploy }:
+  { state, onSelect, lock, onLockClick, links = [], reloadLinks, notes = {}, reloadNotes, stagingOutOfSync = false, deploying = false, deployFx = null, onOpenDeploy }:
   { state: FleetState; onSelect: (a: FleetAgent) => void; lock?: LockState | null; onLockClick?: () => void;
     links?: AgentLink[]; reloadLinks?: () => void;
     notes?: Record<string, string>; reloadNotes?: () => void; stagingOutOfSync?: boolean; deploying?: boolean;
-    onOpenDeploy?: () => void },
+    deployFx?: 'launch' | 'fall' | null; onOpenDeploy?: () => void },
 ) {
   const districts = useMemo(() => groupTown(state), [state]);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -378,9 +378,15 @@ export function PixelTown(
       {/* Ambient scenery — pure decoration on the grass, behind every agent. */}
       {props.decos.map((d) => {
         const isLandmark = d.id === 'landmark';
+        // A finished-deploy effect (launch/fall) takes over the statue for a beat;
+        // otherwise the steady out-of-sync alarm + deploying shake apply.
+        const fxClass = !isLandmark ? ''
+          : deployFx === 'launch' ? ' town-deco-launch'
+          : deployFx === 'fall' ? ' town-deco-fall'
+          : `${stagingOutOfSync ? ' town-deco-alarm' : ''}${deploying ? ' town-deco-shake' : ''}`;
         return (
         <div key={d.id}
-          className={`town-deco${isLandmark ? ' town-deco-landmark' : ''}${isLandmark && stagingOutOfSync ? ' town-deco-alarm' : ''}${isLandmark && deploying ? ' town-deco-shake' : ''}`}
+          className={`town-deco${isLandmark ? ' town-deco-landmark' : ''}${fxClass}`}
           onClick={isLandmark ? (e) => { e.stopPropagation(); onOpenDeploy?.(); } : undefined}
           title={isLandmark ? `${deploying ? 'deploying… · ' : stagingOutOfSync ? 'staging OUT OF SYNC · ' : ''}click to open deploy` : undefined}
           style={{

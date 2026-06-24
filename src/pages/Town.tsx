@@ -21,7 +21,7 @@ import { BookmarksPanel } from '../components/town/BookmarksPanel';
 import { DeployPanel } from '../components/town/DeployPanel';
 import { SyncHud } from '../components/town/SyncHud';
 import { useVerify } from '../lib/verify';
-import { useDeployRunning } from '../lib/deploy';
+import { useDeploySignal } from '../lib/deploy';
 import './Town.css';
 
 type TownView = 'map' | 'list';
@@ -51,7 +51,7 @@ export function Town() {
   const [showLock, setShowLock] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [showDeploy, setShowDeploy] = useState(false);
-  const deploying = useDeployRunning();
+  const { deploying, fx: deployFx } = useDeploySignal();
   const verify = useVerify();
   // statue alarms on DEPLOY out-of-sync (currency), not a service being down.
   const stagingOutOfSync = !!verify.state?.checks?.some((c) => c.group === 'sync' && (c.state === 'stale' || c.state === 'fail'));
@@ -148,7 +148,7 @@ export function Town() {
         </div>
       )}
 
-      {view === 'map' && <PixelTown state={state} onSelect={openAgent} lock={lock} onLockClick={() => setShowLock(true)} links={links} reloadLinks={reloadLinks} notes={notes} reloadNotes={reloadNotes} stagingOutOfSync={stagingOutOfSync} deploying={deploying} onOpenDeploy={() => setShowDeploy(true)} />}
+      {view === 'map' && <PixelTown state={state} onSelect={openAgent} lock={lock} onLockClick={() => setShowLock(true)} links={links} reloadLinks={reloadLinks} notes={notes} reloadNotes={reloadNotes} stagingOutOfSync={stagingOutOfSync} deploying={deploying} deployFx={deployFx} onOpenDeploy={() => setShowDeploy(true)} />}
 
       {view === 'list' && (
         <div className="flex flex-col gap-3">

@@ -43,6 +43,34 @@ export function useDeployRunning(pollMs = 3000): boolean {
   return running;
 }
 
+export type DeployFx = 'launch' | 'fall' | null;
+/** Poll deploy status AND emit a one-shot effect when a run finishes: 'launch'
+ *  on success (exit 0), 'fall' on failure — for the statue's rocket/topple. */
+export function useDeploySignal(pollMs = 2500): { deploying: boolean; fx: DeployFx } {
+  const [deploying, setDeploying] = useState(false);
+  const [fx, setFx] = useState<DeployFx>(null);
+  const prev = useRef<string | undefined>(undefined);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    let alive = true;
+    const load = () => fetch(ENDPOINT).then((r) => r.json()).then((d: DeployState) => {
+      if (!alive) return;
+      setDeploying(d?.status === 'running');
+      if (prev.current === 'running' && d?.status === 'done') {
+        const f: DeployFx = d.exitCode === 0 ? 'launch' : 'fall';
+        setFx(f);
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => { if (alive) setFx(null); }, f === 'launch' ? 2700 : 3600);
+      }
+      prev.current = d?.status;
+    }).catch(() => {});
+    load();
+    const id = setInterval(load, pollMs);
+    return () => { alive = false; clearInterval(id); clearTimeout(timer.current); };
+  }, [pollMs]);
+  return { deploying, fx };
+}
+
 async function post(body: Record<string, unknown>): Promise<{ ok?: boolean; error?: string }> {
   const res = await fetch(ENDPOINT, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
