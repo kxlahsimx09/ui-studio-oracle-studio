@@ -104,6 +104,15 @@ export function DeployPanel({ onClose }: { onClose: () => void }) {
         </div>
         {msg && <p className="text-[11px] text-amber-300 mb-2">{msg}</p>}
 
+        {/* After a LIVE deploy (not a dry-run), a deploy can flip test reality —
+            remind the operator to re-run the affected live-test cards + refresh the
+            catalog (next-live-tester rule 2026-06-24). */}
+        {run?.status === 'done' && run.exitCode === 0 && run.action?.includes('deploy') && !run.action?.includes('dry-run') && (
+          <div className="mb-2 rounded-lg border px-2.5 py-1.5 text-[11px]" style={{ background: '#38bdf81a', borderColor: '#38bdf855', color: '#bae6fd' }}>
+            🧪 Deploy done — a deploy can change test reality. Re-run the affected <b>live-test cards</b> (on next-live-tester), then refresh the catalog: <code className="text-sky-300">python3 poc/integration/scripts/build-live-catalog.py</code> committed in the same PR.
+          </div>
+        )}
+
         {/* streamed output */}
         {run && run.status !== 'idle' && (
           <div className="rounded-lg border border-white/10 p-2">
