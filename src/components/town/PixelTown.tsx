@@ -43,10 +43,11 @@ function pickTarget(a: Actor) {
 }
 
 export function PixelTown(
-  { state, onSelect, lock, onLockClick, links = [], reloadLinks, notes = {}, reloadNotes, stagingOutOfSync = false, deploying = false }:
+  { state, onSelect, lock, onLockClick, links = [], reloadLinks, notes = {}, reloadNotes, stagingOutOfSync = false, deploying = false, onOpenDeploy }:
   { state: FleetState; onSelect: (a: FleetAgent) => void; lock?: LockState | null; onLockClick?: () => void;
     links?: AgentLink[]; reloadLinks?: () => void;
-    notes?: Record<string, string>; reloadNotes?: () => void; stagingOutOfSync?: boolean; deploying?: boolean },
+    notes?: Record<string, string>; reloadNotes?: () => void; stagingOutOfSync?: boolean; deploying?: boolean;
+    onOpenDeploy?: () => void },
 ) {
   const districts = useMemo(() => groupTown(state), [state]);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -375,14 +376,20 @@ export function PixelTown(
     <div ref={wrapRef} className="w-full">
     <div ref={stageRef} className="town-stage" style={{ width: stage.width, height: stage.height }}>
       {/* Ambient scenery — pure decoration on the grass, behind every agent. */}
-      {props.decos.map((d) => (
-        <div key={d.id} className={`town-deco${d.id === 'landmark' && stagingOutOfSync ? ' town-deco-alarm' : ''}${d.id === 'landmark' && deploying ? ' town-deco-shake' : ''}`}
-          title={d.id === 'landmark' && deploying ? 'deploying…' : d.id === 'landmark' && stagingOutOfSync ? 'staging is OUT OF SYNC — see the sync HUD' : undefined}
+      {props.decos.map((d) => {
+        const isLandmark = d.id === 'landmark';
+        return (
+        <div key={d.id}
+          className={`town-deco${isLandmark ? ' town-deco-landmark' : ''}${isLandmark && stagingOutOfSync ? ' town-deco-alarm' : ''}${isLandmark && deploying ? ' town-deco-shake' : ''}`}
+          onClick={isLandmark ? (e) => { e.stopPropagation(); onOpenDeploy?.(); } : undefined}
+          title={isLandmark ? `${deploying ? 'deploying… · ' : stagingOutOfSync ? 'staging OUT OF SYNC · ' : ''}click to open deploy` : undefined}
           style={{
           width: d.spec.w, height: d.spec.h,
           backgroundImage: `url(${d.spec.url})`, backgroundSize: `${d.spec.w}px ${d.spec.h}px`,
           transform: `translate(${d.x}px, ${d.y}px)`,
         }} />
+        );
+      })
       ))}
       {props.anims.map((a) => {
         const k = a.spec.size / a.spec.fw;

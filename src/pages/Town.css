@@ -184,6 +184,9 @@
    hearth campfire) sit above the zone tint but below agents (z 3). Cainos decos
    bake their own shadow, so no CSS drop-shadow on them. */
 .town-deco { z-index: 0; }
+/* The statue is a clickable landmark → opens the deploy panel. */
+.town-deco-landmark { pointer-events: auto; cursor: pointer; }
+.town-deco-landmark:hover { filter: drop-shadow(0 0 8px rgba(125,211,252,0.8)); }
 .town-anim { z-index: 2; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.4)); }
 .town-actor {
   position: absolute; left: 0; top: 0;

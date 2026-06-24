@@ -148,7 +148,7 @@ export function Town() {
         </div>
       )}
 
-      {view === 'map' && <PixelTown state={state} onSelect={openAgent} lock={lock} onLockClick={() => setShowLock(true)} links={links} reloadLinks={reloadLinks} notes={notes} reloadNotes={reloadNotes} stagingOutOfSync={stagingOutOfSync} deploying={deploying} />}
+      {view === 'map' && <PixelTown state={state} onSelect={openAgent} lock={lock} onLockClick={() => setShowLock(true)} links={links} reloadLinks={reloadLinks} notes={notes} reloadNotes={reloadNotes} stagingOutOfSync={stagingOutOfSync} deploying={deploying} onOpenDeploy={() => setShowDeploy(true)} />}
 
       {view === 'list' && (
         <div className="flex flex-col gap-3">
