@@ -97,7 +97,7 @@ function Field({ c, val, set }: { c: Control; val: unknown; set: (v: unknown) =>
 export function LiveTestPanel({ onClose }: { onClose: () => void }) {
   const { data } = useLiveTest(true);
   const lock = useLock(3000);
-  const [suiteId, setSuiteId] = useState('B');
+  const [suiteId, setSuiteId] = useState('D2'); // default to a FAST, no-money card
   const [vals, setVals] = useState<Record<string, unknown>>({});
   const [gvals, setGvals] = useState<Record<string, unknown>>({}); // global controls — persist across suite switches
   const [campaign, setCampaign] = useState('livetest');
@@ -113,6 +113,7 @@ export function LiveTestPanel({ onClose }: { onClose: () => void }) {
 
   const launch = async () => {
     if (gvals.LIVE_DEDICATED_STACK && !window.confirm('LIVE_DEDICATED_STACK wipes ALL staging transactions at start. Continue?')) return;
+    if (suite?.ownerGated && !window.confirm(`Run ${suite.label} on staging?\nThis drives the REAL bank-bot and moves SIM money on the staging stack. Continue?`)) return;
     setMsg(null);
     const r = await runSuite(suiteId, { ...gvals, ...vals }, campaign || 'livetest');
     if (r.held) { const h = r.held as { holder?: { agent?: string } }; setMsg(`staging is HELD by ${h.holder?.agent || 'another agent'} — use the 🔒 panel to seize, or wait.`); }
@@ -140,7 +141,7 @@ export function LiveTestPanel({ onClose }: { onClose: () => void }) {
             </button>
           ))}
         </div>
-        {suite && <p className="text-[10px] text-white/45 mb-2"><code className="text-white/70">{suite.launcher}</code> · ~{suite.runtime} · {suite.gate}{suite.ownerGated ? ' · ⚠ moves SIM money' : ''}</p>}
+        {suite && <p className="text-[10px] text-white/45 mb-2"><code className="text-white/70">{suite.launcher}</code> · {suite.runtime} · {suite.gate}{suite.ownerGated ? ' · ⚠ moves SIM money' : ''}</p>}
 
         {/* global controls — apply to every suite, persist across switches */}
         {!!data?.globals?.length && (
