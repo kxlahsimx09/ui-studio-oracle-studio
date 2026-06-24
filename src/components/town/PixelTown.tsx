@@ -496,6 +496,8 @@ export function PixelTown(
             </span>
             {a.waiting ? (
               <span className="town-bubble town-bubble-wait" title="waiting for your input — click to answer the menu">🔔</span>
+            ) : a.bg ? (
+              <span className="town-bubble town-bubble-work" title={`background shell running — ${a.task || 'working'}`}>⚙️</span>
             ) : a.status === 'working' ? (
               <span className="town-bubble town-bubble-work" title={a.task || ''}>{activityEmoji(a.task)}</span>
             ) : a.status === 'idle' ? (

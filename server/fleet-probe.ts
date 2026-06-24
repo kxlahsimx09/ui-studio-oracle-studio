@@ -9,7 +9,7 @@ import { homedir, hostname } from 'node:os';
 import { join } from 'node:path';
 import { parseWindow } from '../src/lib/role-costume';
 import { contextForCwd } from './context';
-import { paneNeedsInput } from './pane-io';
+import { paneSignals } from './pane-io';
 import { planForPane, prunePlanCache } from './plan-detect';
 import type { FleetState, FleetAgent, FleetTeam, FleetRoad, AgentStatus } from '../src/lib/fleet';
 
@@ -132,15 +132,21 @@ export async function getFleetState(): Promise<FleetState> {
       mappedTeam != null ||
       (!!rest.label && rest.label !== 'oracle' && (known.has(rest.label) || (slugCount.get(rest.label) ?? 0) > 1))
     );
-    const ctx = rest.status === 'offline' ? null : contextForCwd(cwd);
+    // One capture per idle pane → menu (needs input) + background-shell signals.
+    const sig = rest.status === 'idle' ? paneSignals(rest.paneId) : { needsInput: false, bgShell: false };
+    // An idle-glyph agent with a live background shell is NOT asleep — it kicked off
+    // a run_in_background job that's still going → show it as working, flagged bg.
+    const bg = rest.status === 'idle' && sig.bgShell && !sig.needsInput;
+    const status: AgentStatus = bg ? 'working' : rest.status;
     // An idle pane parked on a TUI menu is BLOCKED on a human answer, not just done.
-    const waiting = rest.status === 'idle' ? paneNeedsInput(rest.paneId) : false;
+    const waiting = sig.needsInput;
+    const ctx = status === 'offline' ? null : contextForCwd(cwd);
     // Which Claude account this agent runs on ('' = default logged-in → no badge).
-    const plan = rest.status === 'offline' ? '' : planForPane(rest.paneId, panePid);
+    const plan = status === 'offline' ? '' : planForPane(rest.paneId, panePid);
     // The exact `maw wake --wt <worktree>` value for resume/bookmark — the cwd's
     // worktree suffix (…/<repo>.wt-<worktree>). '' for a primary checkout (not resumable).
     const worktree = cwd.includes('.wt-') ? cwd.split('.wt-').pop()!.split('/')[0] : '';
-    return { ...rest, team: isTeam ? (mappedTeam ?? rest.label) : null, ctxPct: ctx?.pct, ctxModel: ctx?.model, waiting, plan: plan || undefined, worktree: worktree || undefined };
+    return { ...rest, status, bg: bg || undefined, team: isTeam ? (mappedTeam ?? rest.label) : null, ctxPct: ctx?.pct, ctxModel: ctx?.model, waiting, plan: plan || undefined, worktree: worktree || undefined };
   });
 
   // Dispatch roads: orchestrator → worker whose slug extends the orchestrator's slug
