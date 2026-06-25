@@ -130,18 +130,23 @@ export function cancelRun(): { ok: boolean } {
   return { ok: true };
 }
 
-/** Fetch + fast-forward latest origin/main INTO the agent's repo (its worktree).
- *  ff-only = safe: never rewrites or conflicts; fails clearly if the branch has
- *  its own commits. Used by the panel's "pull main" button before a run. */
+/** Bring latest origin/main INTO the agent's repo (its worktree). Fast-forward
+ *  when possible; if the agent's branch has diverged (its own commits), do a real
+ *  merge commit. On conflict / dirty tree, ABORT cleanly and report — never leave
+ *  the worktree half-merged. Used by the panel's "pull main" button. */
 export function pullMainRepo(paneId?: string): { ok: true; output: string } | { error: string } {
   const root = repoRootForPane(paneId, cfg().integrationDir);
   if (!root) return { error: 'could not resolve the agent repo (pane gone?)' };
+  const g = `git -C "${root}"`;
   try {
     const out = execFileSync('bash', ['-c',
-      `git -C "${root}" fetch origin main 2>&1 && ` +
-      `git -C "${root}" merge --ff-only origin/main 2>&1 && ` +
-      `echo "now at $(git -C "${root}" rev-parse --short HEAD) on $(git -C "${root}" rev-parse --abbrev-ref HEAD)"`,
-    ], { encoding: 'utf8', timeout: 40000 });
+      `${g} fetch origin main 2>&1 && ` +
+      `if ${g} merge --ff-only origin/main 2>/dev/null; then echo "fast-forwarded to origin/main"; ` +
+      `elif ${g} merge --no-edit origin/main 2>&1; then echo "merged origin/main into $(${g} rev-parse --abbrev-ref HEAD)"; ` +
+      `else ${g} merge --abort 2>/dev/null || true; ` +
+      `echo "MERGE BLOCKED — origin/main conflicts with this branch (or the tree is dirty). Commit/stash WIP, then resolve 'git merge origin/main' in the agent."; exit 1; fi; ` +
+      `echo "now at $(${g} rev-parse --short HEAD) on $(${g} rev-parse --abbrev-ref HEAD)"`,
+    ], { encoding: 'utf8', timeout: 60000 });
     return { ok: true, output: `${root.replace(homedir(), '~')}\n${out.trim()}` };
   } catch (e) {
     const ex = e as { stdout?: string; stderr?: string; message: string };
