@@ -13,6 +13,7 @@ import { PresetManager } from './PresetManager';
 import { LiveTestPanel } from './LiveTestPanel';
 import { HandoffMenu } from './HandoffMenu';
 import { MessageReader } from './MessageReader';
+import { latestMessage, summarizeText, speakText, stopSpeech, getVoice } from '../../lib/speech';
 
 const NAV_KEYS: Array<[string, string]> = [['↑', 'up'], ['↓', 'down'], ['←', 'left'], ['→', 'right']];
 type Tab = 'history' | 'live';
@@ -59,6 +60,8 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
   const [showHandoffs, setShowHandoffs] = useState(false);
   const [showReader, setShowReader] = useState(false);
   const [more, setMore] = useState(false); // mobile: header actions drawer
+  const [sumState, setSumState] = useState<'idle' | 'working' | 'speaking'>('idle');
+  const [sumText, setSumText] = useState<string | null>(null);
 
   // Carry over to a fresh clean session (the old one writes a brief file; the fresh
   // agent reads it + continues). For when context runs low. ~minute, runs server-side.
@@ -69,6 +72,23 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
     try { await carryOverSession(agent.paneId); onClose(); }
     catch (e) { setErr((e as Error).message); setCarrying(false); }
   };
+
+  // Outer Summary: grab the agent's latest message, summarise it (Gemini) and read
+  // it aloud — without opening the Read panel. Click again while busy = stop.
+  const doSummaryRead = async () => {
+    if (sumState !== 'idle') { stopSpeech(); setSumState('idle'); return; }
+    setSumState('working'); setSumText(null); setErr(null);
+    try {
+      const last = latestMessage(await fetchTranscript(agent.paneId));
+      if (!last) { setErr('no message to summarise yet'); setSumState('idle'); return; }
+      const r = await summarizeText(last.text);
+      if (r.error || !r.summary) { setErr(`summary: ${r.error || 'none'}`); setSumState('idle'); return; }
+      setSumText(r.summary);
+      setSumState('speaking');
+      await speakText(r.summary, getVoice(), { onEnd: () => setSumState('idle') });
+    } catch (e) { setErr((e as Error).message); setSumState('idle'); }
+  };
+  useEffect(() => () => { stopSpeech(); }, []); // stop audio on close
 
   // Bookmark this agent's resume recipe (role+worktree+account) so it can be closed
   // now and respawned later with its context. Only resumable for maw-wake agents.
@@ -219,6 +239,7 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
         <button onClick={doBookmark} disabled={bm === 'saving'} className="text-[10px] px-1.5 py-0.5 rounded disabled:opacity-40" style={{ background: '#fbbf2422', color: '#fbbf24', border: '1px solid #fbbf2455' }} title="bookmark this agent → respawn it later (same worktree + account, with context)">{bm === 'done' ? '🔖 saved' : bm === 'err' ? '🔖 failed' : bm === 'saving' ? '🔖 …' : '🔖 bookmark'}</button>
       )}
       <button onClick={doCarryOver} disabled={carrying} className="text-[10px] px-1.5 py-0.5 rounded disabled:opacity-40" style={{ background: '#22d3ee22', color: '#67e8f9', border: '1px solid #22d3ee55' }} title="context low? hand off to a fresh clean-context agent, briefed from this session">{carrying ? '↪ …' : '↪ carry over'}</button>
+      <button onClick={doSummaryRead} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }} title="summarise the latest message + read it aloud (no need to open Read)">{sumState === 'working' ? '🔊 …' : sumState === 'speaking' ? '■ stop' : '🔊 summary'}</button>
       <button onClick={() => { closeMore(); setShowReader(true); }} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: '#22c55e22', color: '#86efac', border: '1px solid #22c55e55' }} title="open the latest message in a clean reader">📖 read</button>
       <button onClick={() => { closeMore(); setShowHandoffs(true); }} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: '#38bdf822', color: '#7dd3fc', border: '1px solid #38bdf855' }} title="find handoff file paths mentioned in this session and copy one">📂 handoffs</button>
       <button onClick={() => { closeMore(); setVariantOpen(true); }} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }} title="change this agent's sprite colour/variant on the map">🎨 variant</button>
@@ -267,6 +288,12 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
         </header>
 
         {err && <div className="px-3 py-1 text-[11px] text-red-300 bg-red-500/10">⚠ {err}</div>}
+        {sumText && (
+          <div className="flex items-start gap-2 px-3 py-1.5 text-[11px] text-violet-100 border-b border-white/10" style={{ background: '#a78bfa14' }}>
+            <span>📝 {sumState === 'speaking' ? '🔊 ' : ''}{sumText}</span>
+            <button onClick={() => { stopSpeech(); setSumState('idle'); setSumText(null); }} className="ml-auto text-white/50 hover:text-white/90 shrink-0" title="dismiss / stop">✕</button>
+          </div>
+        )}
 
         <pre
           ref={preRef}
