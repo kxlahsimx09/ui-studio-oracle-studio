@@ -126,6 +126,14 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
     try { if (input) localStorage.setItem(draftKey, input); else localStorage.removeItem(draftKey); } catch { /* ignore */ }
   }, [input, draftKey]);
 
+  // Lock the page behind the (full-screen on mobile) window so touch-scrolling
+  // moves the modal, not the town underneath it.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   // Auto-focus the message box when the window opens so dictation tools (Wispr
   // Flow — hold Fn) type straight into the chat without a manual click. Caret at end.
   useEffect(() => {
@@ -248,7 +256,8 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
             {/* mobile: actions behind a ⋯ drawer */}
             <button className="sm:hidden text-[14px] leading-none px-2 py-1 rounded shrink-0" style={{ background: '#ffffff10', color: '#cbd5e1', border: '1px solid #ffffff22' }}
               onClick={() => setMore((m) => !m)} title="more actions">⋯</button>
-            <button onClick={onClose} className="text-white/50 hover:text-white/90 text-base px-1 shrink-0" title="close window">✕</button>
+            <button onClick={onClose} className="shrink-0 rounded text-white/80 hover:text-white text-lg leading-none px-2.5 py-1 sm:text-base sm:px-1.5"
+              style={{ background: '#ffffff12', border: '1px solid #ffffff2a' }} title="close window">✕</button>
           </div>
           {more && <div className="flex flex-wrap gap-1.5 px-3 pb-2 sm:hidden">{actionBtns}</div>}
         </header>
@@ -261,7 +270,7 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
             const el = e.currentTarget;
             stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
           }}
-          className="flex-1 overflow-auto m-0 px-3 py-2 text-[11px] leading-snug whitespace-pre-wrap break-words"
+          className="flex-1 overflow-auto overscroll-contain m-0 px-3 py-2 text-[11px] leading-snug whitespace-pre-wrap break-words"
           style={{ background: '#08080c', color: '#cdd2cd', fontFamily: 'ui-monospace,Menlo,monospace' }}
         >
           {body}
