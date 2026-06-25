@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 
 const KEY_FILE = join(homedir(), '.fleet-town', 'gemini.key');
-const MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 function apiKey(): string {
   if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY.trim();
@@ -29,7 +29,9 @@ export async function summarize(text: string): Promise<{ summary?: string; error
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 256 },
+          // thinkingBudget 0 → no hidden "thinking" tokens eating the output budget
+          // (2.5-flash), so the short summary comes out complete.
+          generationConfig: { temperature: 0.2, maxOutputTokens: 400, thinkingConfig: { thinkingBudget: 0 } },
         }),
       },
     );
