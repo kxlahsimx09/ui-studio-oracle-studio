@@ -125,6 +125,15 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
     try { if (input) localStorage.setItem(draftKey, input); else localStorage.removeItem(draftKey); } catch { /* ignore */ }
   }, [input, draftKey]);
 
+  // Auto-focus the message box when the window opens so dictation tools (Wispr
+  // Flow — hold Fn) type straight into the chat without a manual click. Caret at end.
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    const t = setTimeout(() => { el.focus(); const n = el.value.length; el.setSelectionRange(n, n); }, 0);
+    return () => clearTimeout(t);
+  }, []);
+
   // Esc closes the window. (To send Escape to the agent's TUI menu, use the esc nav button.)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
