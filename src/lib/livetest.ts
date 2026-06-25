@@ -14,10 +14,16 @@ export interface Suite {
   cast?: string;
   batch?: boolean;   // a run-catalog.sh "run everything" entry, not a single card
 }
+export interface ProgItem {
+  id: string; speed?: string; redfirst?: boolean;
+  status: 'pending' | 'running' | 'done';
+  rc?: number; summary?: string; color?: 'green' | 'amber' | 'red';
+}
 export interface RunState {
   status: 'idle' | 'running' | 'done';
   suite?: string; campaign?: string; startedAt?: number; endedAt?: number;
-  exitCode?: number | null; log: string[]; legs?: unknown; evidenceDir?: string; error?: string;
+  exitCode?: number | null; log: string[]; progress?: ProgItem[];
+  legs?: unknown; evidenceDir?: string; error?: string;
 }
 export interface CatalogSummary { total_cards?: number; runnable?: number; green?: number;
   by_speed?: Record<string, number>; fast_regression_roster?: string[] }
@@ -50,8 +56,9 @@ export async function runSuite(suite: string, env: Record<string, unknown>, camp
 export async function cancelRun(): Promise<void> {
   await fetch('/__fleet/livetest', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'cancel' }) }).catch(() => {});
 }
-/** Fetch + ff-pull latest origin/main into the opened agent's repo (worktree). */
-export async function pullMainRepo(paneId: string): Promise<{ ok?: boolean; output?: string; error?: string }> {
+/** Bring latest origin/main into the opened agent's repo (worktree), or the
+ *  primary checkout when no pane (the main-repo run menu). */
+export async function pullMainRepo(paneId?: string): Promise<{ ok?: boolean; output?: string; error?: string }> {
   const res = await fetch('/__fleet/livetest', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ action: 'pull-main', paneId }),

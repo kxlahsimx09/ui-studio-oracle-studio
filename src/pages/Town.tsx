@@ -19,6 +19,7 @@ import { UsagePanel } from '../components/town/UsagePanel';
 import { LockPanel } from '../components/town/LockPanel';
 import { BookmarksPanel } from '../components/town/BookmarksPanel';
 import { DeployPanel } from '../components/town/DeployPanel';
+import { LiveTestPanel } from '../components/town/LiveTestPanel';
 import { SyncHud } from '../components/town/SyncHud';
 import { useVerify } from '../lib/verify';
 import { useDeploySignal } from '../lib/deploy';
@@ -51,6 +52,7 @@ export function Town() {
   const [showLock, setShowLock] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [showDeploy, setShowDeploy] = useState(false);
+  const [showTests, setShowTests] = useState(false);
   const { deploying, fx: deployFx } = useDeploySignal();
   const verify = useVerify();
   // statue alarms on DEPLOY out-of-sync (currency), not a service being down.
@@ -108,6 +110,12 @@ export function Town() {
             title="bookmarked agents — respawn a closed agent with its context"
           >🔖 bookmarks</button>
           <button
+            onClick={() => setShowTests(true)}
+            className="px-2.5 py-1 rounded-full text-[11px]"
+            style={{ background: '#4ade8022', color: '#86efac', border: '1px solid #4ade8055' }}
+            title="run live-test cards on staging from the MAIN repo (real-time per-card progress)"
+          >🧪 tests</button>
+          <button
             onClick={() => setShowDeploy(true)}
             className="px-2.5 py-1 rounded-full text-[11px]"
             style={deploying
@@ -161,6 +169,7 @@ export function Town() {
       {showUsage && <UsagePanel onClose={() => setShowUsage(false)} />}
       {showBookmarks && <BookmarksPanel onClose={() => setShowBookmarks(false)} />}
       {showDeploy && <DeployPanel onClose={() => setShowDeploy(false)} />}
+      {showTests && <LiveTestPanel onClose={() => setShowTests(false)} />}
       {showLock && <LockPanel lock={lock} agents={state.agents} onChange={setLock} onClose={() => setShowLock(false)} />}
 
       {loading && !state.agents.length && (

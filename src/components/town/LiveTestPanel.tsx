@@ -3,11 +3,42 @@
 // agent and runs the card's exec.command in that agent's poc/integration, streaming
 // output. Results are "ran + per-leg colour", never PASS/FAIL (§ADR-21).
 import { useEffect, useRef, useState } from 'react';
-import { useLiveTest, runSuite, cancelRun, pullMainRepo, type Suite } from '../../lib/livetest';
+import { useLiveTest, runSuite, cancelRun, pullMainRepo, type Suite, type ProgItem } from '../../lib/livetest';
 import { useLock } from '../../lib/lock';
 import type { FleetAgent } from '../../lib/fleet';
 
 const COLOUR: Record<string, string> = { GREEN: '#4ade80', AMBER: '#fbbf24', RED: '#f87171', SKIPPED: '#64748b' };
+const PROG_DOT: Record<string, string> = { green: '#4ade80', amber: '#fbbf24', red: '#f87171' };
+
+// Real-time per-card board for a "run the whole catalog" run.
+function ProgressBoard({ items }: { items: ProgItem[] }) {
+  const done = items.filter((p) => p.status === 'done');
+  const counts = { green: done.filter((p) => p.color === 'green').length, amber: done.filter((p) => p.color === 'amber').length, red: done.filter((p) => p.color === 'red').length };
+  return (
+    <div className="rounded-lg border border-white/10 p-2 mb-2">
+      <div className="flex items-center gap-2 text-[10px] text-white/50 mb-1.5">
+        <b className="text-white/80">progress</b> {done.length}/{items.length}
+        <span className="ml-auto flex items-center gap-2">
+          <span style={{ color: '#4ade80' }}>● {counts.green}</span>
+          <span style={{ color: '#fbbf24' }}>● {counts.amber}</span>
+          <span style={{ color: '#f87171' }}>● {counts.red}</span>
+        </span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1">
+        {items.map((p) => {
+          const dot = p.status === 'pending' ? '#3f4654' : p.status === 'running' ? '#7dd3fc' : (PROG_DOT[p.color || ''] || '#64748b');
+          return (
+            <div key={p.id} className="flex items-center gap-1.5 text-[10px] min-w-0" title={p.summary || p.status}>
+              <span className={`w-2 h-2 rounded-full shrink-0${p.status === 'running' ? ' animate-pulse' : ''}`} style={{ background: dot, boxShadow: p.status !== 'pending' ? `0 0 5px ${dot}` : undefined }} />
+              <span className="font-mono text-white/80 shrink-0">{p.id}</span>
+              <span className="text-white/40 truncate">{p.status === 'running' ? 'running…' : p.status === 'pending' ? 'queued' : (p.summary || `rc ${p.rc}`)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function Legs({ legs }: { legs: unknown }) {
   if (Array.isArray(legs)) {
@@ -77,9 +108,9 @@ export function LiveTestPanel({ agent, onClose }: { agent?: FleetAgent; onClose:
     else if (r.error) setMsg(r.error);
   };
   const pullMain = async () => {
-    if (!agent?.paneId || pulling) return;
+    if (pulling) return;
     setPulling(true); setMsg(null);
-    const r = await pullMainRepo(agent.paneId);
+    const r = await pullMainRepo(agent?.paneId);
     setMsg(r.error ? `pull main: ${r.error.slice(0, 300)}` : `✓ pulled main\n${r.output || ''}`);
     setPulling(false);
   };
@@ -101,7 +132,7 @@ export function LiveTestPanel({ agent, onClose }: { agent?: FleetAgent; onClose:
           <span className="text-white/40">runs on:</span>
           <code className="text-sky-300">{agent?.worktree ? `wt ${agent.worktree}` : 'primary checkout'}</code>
           <span className="flex-1" />
-          <button onClick={pullMain} disabled={!agent?.paneId || pulling}
+          <button onClick={pullMain} disabled={pulling}
             className="px-2 py-1 rounded text-[10px] disabled:opacity-40"
             style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }}
             title="git fetch + ff-merge latest origin/main into this agent's repo (refreshes the catalog + scripts)">
@@ -146,6 +177,9 @@ export function LiveTestPanel({ agent, onClose }: { agent?: FleetAgent; onClose:
             : <button onClick={cancelRun} className="ml-auto px-3 py-1.5 rounded-lg text-[12px]" style={{ background: '#f8717122', color: '#fca5a5', border: '1px solid #f8717155' }}>■ Cancel run</button>}
         </div>
         {msg && <pre className="text-[11px] text-amber-300 mb-2 whitespace-pre-wrap break-words font-sans">{msg}</pre>}
+
+        {/* real-time per-card board (catalog runs) */}
+        {run?.progress && run.progress.length > 0 && <ProgressBoard items={run.progress} />}
 
         {/* run output */}
         {run && run.status !== 'idle' && (
