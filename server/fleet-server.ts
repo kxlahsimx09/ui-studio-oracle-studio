@@ -19,7 +19,7 @@ import { switchAccount } from './account-switch';
 import { carryOver } from './carry-over';
 import { listBookmarks, addBookmark, removeBookmark, respawnBookmark } from './bookmarks';
 import { listLinks, addLink, removeLink } from './agent-links';
-import { getDeploy, startDeploy, startPullMain, cancelDeploy } from './deploy';
+import { getDeploy, startDeploy, startPullMain, startMockPortal, cancelDeploy } from './deploy';
 import { listNotes, setNote, removeNote } from './agent-notes';
 import { getVerify, runVerify } from './verify';
 import { listPlans } from './usage';
@@ -216,6 +216,7 @@ const server = Bun.serve({
           };
           if (b.action === 'cancel') return Response.json(cancelDeploy());
           if (b.action === 'pull-main') { const r = startPullMain(); return Response.json(r, { status: 'error' in r ? 400 : 200 }); }
+          if (b.action === 'mock-portal') { const r = startMockPortal({ dry: b.dry, target: (b as { target?: string }).target }); return Response.json(r, { status: 'error' in r ? 400 : 200 }); }
           const r = startDeploy({ mode: b.mode, dry: b.dry, pull: b.pull, allowDirty: b.allowDirty, skipGate: b.skipGate });
           return Response.json(r, { status: 'error' in r ? 400 : 200 });
         }

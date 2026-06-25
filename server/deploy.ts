@@ -138,6 +138,20 @@ export function startPullMain(): { ok: true } | { error: string } {
   return begin('pull main (all repos)', display, 'bash', ['-c', repos.map(updateMainSnippet).join('; ')], c.gatewayRepo);
 }
 
+/** Deploy the mock bank portals via the bank-bot repo's deploy-mock-portal.sh.
+ *  Separate from the gateway's deploy-staging.sh — different repo, different host
+ *  flow (SCB local rsync+systemctl, KTB over SSM). Default target = all. */
+export function startMockPortal(opts: { dry?: boolean; target?: string }): { ok: true } | { error: string } {
+  const c = cfg();
+  const script = join(c.bankbotRepo, 'scripts/deploy-mock-portal.sh');
+  if (!existsSync(script)) return { error: `mock-portal script not found: ${script} (pull main on bank-bot?)` };
+  const target = (opts.target || 'all').trim();
+  if (!/^(scb|ktb|all)$/.test(target)) return { error: `bad target '${target}' (scb|ktb|all)` };
+  const mode = opts.dry ? '--dry-run' : '--deploy';
+  const label = `mock-portal ${opts.dry ? 'dry-run' : 'deploy'} (${target})`;
+  return begin(label, `deploy-mock-portal.sh ${mode} ${target}`, 'bash', ['-c', `bash "${script}" ${mode} ${target}`], c.bankbotRepo);
+}
+
 export function cancelDeploy(): { ok: boolean } {
   if (child) { try { child.kill('SIGINT'); } catch { /* */ } }
   return { ok: true };

@@ -4,7 +4,7 @@
 // errors live. A separate button fetch+pulls main on both repos (gateway + UI).
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useDeploy, startDeploy, pullMain, cancelDeploy, type DeployMode } from '../../lib/deploy';
+import { useDeploy, startDeploy, pullMain, deployMockPortal, cancelDeploy, type DeployMode } from '../../lib/deploy';
 
 function Btn({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
   return (
@@ -48,6 +48,12 @@ export function DeployPanel({ onClose }: { onClose: () => void }) {
     dry ? undefined
       : `LIVE ${sliceLabel} deploy to STAGING${pull ? ' (pulls main first)' : ''}${allowDirty ? ' — ALLOW-DIRTY (ships uncommitted code!)' : ''}. This mutates staging. Continue?`,
   );
+  // Mock bank portals (bank-bot repo) — separate from the gateway deploy. Honours
+  // the Dry-run toggle (--dry-run shows the per-host delta; --deploy ships).
+  const mockPortal = () => fire(
+    () => deployMockPortal(dry, 'all'),
+    dry ? undefined : 'Deploy the mock bank portals (SCB + KTB) to serve latest main? This restarts the portal services. Continue?',
+  );
 
   return (
     <div className="fixed inset-0 z-[56] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
@@ -86,12 +92,18 @@ export function DeployPanel({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 mb-3">
+        <div className="flex flex-wrap items-center gap-2 mb-3">
           <button onClick={() => fire(pullMain)} disabled={running}
             className="px-3 py-1.5 rounded-lg text-[12px] disabled:opacity-40"
             style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }}
             title="fetch + land on latest origin/main for gateway + admin-portal + bank-bot">
             ⤓ Fetch &amp; pull main (all 3 repos)
+          </button>
+          <button onClick={mockPortal} disabled={running}
+            className="px-3 py-1.5 rounded-lg text-[12px] disabled:opacity-40"
+            style={{ background: '#fb923c22', color: '#fdba74', border: '1px solid #fb923c55' }}
+            title="deploy-mock-portal.sh — ship sim/mock-portal to SCB + KTB hosts (honours Dry-run). Separate from the staging deploy.">
+            🏦 {dry ? 'Mock portal (dry)' : 'Deploy mock portal'}
           </button>
           {!running
             ? <button onClick={deploy} className="ml-auto px-3 py-1.5 rounded-lg text-[12px]"
