@@ -229,12 +229,16 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-0 sm:p-6" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center bg-black/70 p-0 sm:p-6" onClick={onClose}>
       <div
-        className="flex flex-col w-full h-full rounded-none border-0 sm:w-[92vw] sm:h-[88vh] sm:rounded-xl sm:border overflow-hidden shadow-2xl"
+        className="flex flex-col w-full h-[93dvh] rounded-t-2xl border-0 sm:w-[92vw] sm:h-[88vh] sm:rounded-xl sm:border overflow-hidden shadow-2xl"
         style={{ background: '#0c0c12', borderColor: cos.color + '66' }}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* mobile: a grab handle to tap-close (the dim strip above also closes) */}
+        <button onClick={onClose} className="sm:hidden flex justify-center pt-2.5 pb-1.5 w-full shrink-0" aria-label="close">
+          <span className="w-10 h-1.5 rounded-full bg-white/30" />
+        </button>
         <header className="border-b border-white/10">
           <div className="flex items-center gap-2 px-3 py-2">
             <span style={{ fontSize: 16 }}>{cos.emoji}</span>
@@ -256,8 +260,8 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
             {/* mobile: actions behind a ⋯ drawer */}
             <button className="sm:hidden text-[14px] leading-none px-2 py-1 rounded shrink-0" style={{ background: '#ffffff10', color: '#cbd5e1', border: '1px solid #ffffff22' }}
               onClick={() => setMore((m) => !m)} title="more actions">⋯</button>
-            <button onClick={onClose} className="shrink-0 rounded text-white/80 hover:text-white text-lg leading-none px-2.5 py-1 sm:text-base sm:px-1.5"
-              style={{ background: '#ffffff12', border: '1px solid #ffffff2a' }} title="close window">✕</button>
+            <button onClick={onClose} className="shrink-0 grid place-items-center rounded-lg text-white/85 hover:text-white w-10 h-10 text-xl sm:w-auto sm:h-auto sm:text-base sm:px-1.5 sm:py-1"
+              style={{ background: '#ffffff18', border: '1px solid #ffffff33' }} title="close window">✕</button>
           </div>
           {more && <div className="flex flex-wrap gap-1.5 px-3 pb-2 sm:hidden">{actionBtns}</div>}
         </header>
