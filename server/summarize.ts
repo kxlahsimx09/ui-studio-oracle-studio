@@ -21,7 +21,10 @@ export async function summarize(text: string): Promise<{ summary?: string; error
   if (!key) return { error: 'no Google AI key — put it in ~/.fleet-town/gemini.key (one line) or set GEMINI_API_KEY' };
   const t = (text || '').slice(0, 30000).trim();
   if (!t) return { error: 'nothing to summarise' };
-  const prompt = `Summarise the message below in 1–2 short, clear sentences, in the SAME language as the message (Thai or English). It will be read aloud, so use plain words and no markdown. Output ONLY the summary.\n\n---\n${t}`;
+  // Pick the OUTPUT language explicitly (any Thai → Thai), so the summary matches
+  // what the operator wants read aloud — a "same language" hint alone is unreliable.
+  const lang = /[฀-๿]/.test(t) ? 'Thai (ภาษาไทย)' : 'English';
+  const prompt = `Summarise the message below in 1–2 short, clear sentences. Respond in ${lang}. It will be read aloud, so use plain words and no markdown. Output ONLY the summary.\n\n---\n${t}`;
   try {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(key)}`,
