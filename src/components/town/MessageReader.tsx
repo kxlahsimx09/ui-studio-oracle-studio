@@ -41,10 +41,47 @@ function linkify(s: string): ReactNode[] {
   return out;
 }
 
+// Strip markdown / code / links / emoji / box-drawing so a TTS voice reads cleanly
+// (these special characters otherwise get spelled out or mangled).
+function cleanForSpeech(s: string): string {
+  return (s || '')
+    .replace(/```[\s\S]*?```/g, ' โค้ด. ')            // fenced code → a short spoken marker
+    .replace(/`([^`]+)`/g, '$1')                       // inline code → its text
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')             // images
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')           // links → link text
+    .replace(/https?:\/\/\S+/g, ' ลิงก์ ')             // bare URLs → "link"
+    .replace(/[#>*_~`|]+/g, ' ')                       // markdown punctuation
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{2500}-\u{257F}]/gu, ' ') // emoji / arrows / box-drawing
+    .replace(/[\uFE0F\u200D]/g, '')                    // variation selectors / zero-width joiner
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{2,}/g, '. ')
+    .trim();
+}
+
 export function MessageReader({ paneId, title, onClose }: { paneId: string; title: string; onClose: () => void }) {
   const [msgs, setMsgs] = useState<Msg[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [idx, setIdx] = useState(0);
+  const [speaking, setSpeaking] = useState(false);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [summarizing, setSummarizing] = useState(false);
+
+  const speak = (raw: string) => {
+    const synth = window.speechSynthesis;
+    if (!synth) { setErr('this browser has no speech synthesis'); return; }
+    synth.cancel();
+    const clean = cleanForSpeech(raw);
+    if (!clean) return;
+    const u = new SpeechSynthesisUtterance(clean.slice(0, 32000));
+    u.lang = /[฀-๿]/.test(clean) ? 'th-TH' : 'en-US'; // Thai if any Thai chars
+    u.onend = () => setSpeaking(false);
+    u.onerror = () => setSpeaking(false);
+    setSpeaking(true);
+    synth.speak(u);
+  };
+  const stopSpeak = () => { try { window.speechSynthesis?.cancel(); } catch { /* */ } setSpeaking(false); };
+  // Stop speech on close/unmount.
+  useEffect(() => () => { try { window.speechSynthesis?.cancel(); } catch { /* */ } }, []);
 
   useEffect(() => {
     let alive = true;
@@ -56,7 +93,22 @@ export function MessageReader({ paneId, title, onClose }: { paneId: string; titl
 
   const total = msgs?.length ?? 0;
   const cur = msgs && total ? msgs[idx] : null;
-  const go = (d: number) => setIdx((i) => Math.min(total - 1, Math.max(0, i + d)));
+  // changing message → drop the old summary + stop any speech.
+  const goto = (n: number) => { stopSpeak(); setSummary(null); setIdx(Math.min(total - 1, Math.max(0, n))); };
+  const go = (d: number) => goto(idx + d);
+
+  // Summarise the current message via Gemini (server-side key), then read it aloud.
+  const doSummary = async () => {
+    if (!cur || summarizing) return;
+    setSummarizing(true); setErr(null); setSummary(null); stopSpeak();
+    try {
+      const res = await fetch('/__fleet/summarize', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: cur.text }) });
+      const j = await res.json().catch(() => ({ error: `summarize ${res.status}` })) as { summary?: string; error?: string };
+      if (j.error || !j.summary) setErr(j.error || 'no summary');
+      else { setSummary(j.summary); speak(j.summary); }
+    } catch (e) { setErr((e as Error).message); }
+    finally { setSummarizing(false); }
+  };
   // ← = backward (older), → = forward (newer)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -77,6 +129,22 @@ export function MessageReader({ paneId, title, onClose }: { paneId: string; titl
           <span className="ml-auto text-[11px] text-white/40 font-mono">{total ? `${idx + 1} / ${total}` : '—'}</span>
           <button onClick={onClose} className="ml-2 text-white/50 hover:text-white/90 text-sm" title="close (Esc)">✕</button>
         </header>
+
+        {cur && (
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-white/10 flex-wrap">
+            <button onClick={() => speak(cur.text)}
+              className="px-3 py-1.5 rounded-lg text-[12px]"
+              style={{ background: '#22c55e22', color: '#86efac', border: '1px solid #22c55e55' }}
+              title="read the whole message aloud (browser speech)">🔊 Full read</button>
+            <button onClick={doSummary} disabled={summarizing}
+              className="px-3 py-1.5 rounded-lg text-[12px] disabled:opacity-40"
+              style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }}
+              title="Gemini summary of this message, read aloud">{summarizing ? '📝 summarising…' : '📝 Summary'}</button>
+            {speaking && <button onClick={stopSpeak} className="px-3 py-1.5 rounded-lg text-[12px]"
+              style={{ background: '#f8717122', color: '#fca5a5', border: '1px solid #f8717155' }}>■ Stop</button>}
+          </div>
+        )}
+        {summary && <div className="px-4 py-2 text-[12px] text-violet-200/90 border-b border-white/10" style={{ background: '#a78bfa12' }}>📝 {summary}</div>}
 
         {err && <p className="px-4 py-3 text-[12px] text-red-300">⚠ {err}</p>}
         {!err && msgs == null && <p className="px-4 py-3 text-[12px] text-white/40">loading transcript…</p>}
@@ -102,7 +170,7 @@ export function MessageReader({ paneId, title, onClose }: { paneId: string; titl
             style={{ background: '#ffffff10', color: '#cbd5e1', border: '1px solid #ffffff20' }}
             title="next (newer) message · →">forward →</button>
           <span className="flex-1" />
-          <button onClick={() => setIdx(total - 1)} disabled={idx >= total - 1}
+          <button onClick={() => goto(total - 1)} disabled={idx >= total - 1}
             className="px-3 py-1.5 rounded-lg text-[12px] disabled:opacity-30"
             style={{ background: '#38bdf822', color: '#7dd3fc', border: '1px solid #38bdf855' }}
             title="jump to the latest message">⤓ latest</button>

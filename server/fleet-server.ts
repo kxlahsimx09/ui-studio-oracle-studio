@@ -22,6 +22,7 @@ import { listLinks, addLink, removeLink } from './agent-links';
 import { getDeploy, startDeploy, startPullMain, startMockPortal, cancelDeploy } from './deploy';
 import { listNotes, setNote, removeNote } from './agent-notes';
 import { getVerify, runVerify } from './verify';
+import { summarize } from './summarize';
 import { listPlans } from './usage';
 import { handlePush, startNotifyLoop } from './push';
 import { handleTelegram } from './telegram';
@@ -244,6 +245,12 @@ const server = Bun.serve({
           const b = (await req.json().catch(() => ({}))) as { force?: boolean };
           return Response.json({ ...runVerify(!!b.force), state: getVerify() });
         }
+      } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    }
+    if (p === '/__fleet/summarize' && req.method === 'POST') {
+      try {
+        const b = (await req.json()) as { text?: string };
+        return Response.json(await summarize(b.text || ''));
       } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
     }
     if (p === '/__fleet/respawn' && req.method === 'POST') {
