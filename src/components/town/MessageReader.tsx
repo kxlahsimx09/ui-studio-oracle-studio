@@ -34,6 +34,8 @@ export function MessageReader({ paneId, title, onClose }: { paneId: string; titl
   const [loadingAudio, setLoadingAudio] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
+  const [narration, setNarration] = useState<string | null>(null);
+  const [narrating, setNarrating] = useState(false);
   const [voice, setVoice] = useState(() => { try { return localStorage.getItem(VOICE_KEY) || 'Kore'; } catch { return 'Kore'; } });
 
   const stopSpeak = () => { stopSpeech(); setSpeaking(false); setLoadingAudio(false); };
@@ -59,14 +61,14 @@ export function MessageReader({ paneId, title, onClose }: { paneId: string; titl
 
   const total = msgs?.length ?? 0;
   const cur = msgs && total ? msgs[idx] : null;
-  // changing message → drop the old summary + stop any speech.
-  const goto = (n: number) => { stopSpeak(); setSummary(null); setIdx(Math.min(total - 1, Math.max(0, n))); };
+  // changing message → drop the old summary/narration + stop any speech.
+  const goto = (n: number) => { stopSpeak(); setSummary(null); setNarration(null); setIdx(Math.min(total - 1, Math.max(0, n))); };
   const go = (d: number) => goto(idx + d);
 
   // Summarise the current message via Gemini (server-side key), then read it aloud.
   const doSummary = async () => {
     if (!cur || summarizing) return;
-    setSummarizing(true); setErr(null); setSummary(null); stopSpeak();
+    setSummarizing(true); setErr(null); setSummary(null); setNarration(null); stopSpeak();
     try {
       const res = await fetch('/__fleet/summarize', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: cur.text }) });
       const j = await res.json().catch(() => ({ error: `summarize ${res.status}` })) as { summary?: string; error?: string };
@@ -74,6 +76,20 @@ export function MessageReader({ paneId, title, onClose }: { paneId: string; titl
       else { setSummary(j.summary); speak(j.summary); }
     } catch (e) { setErr((e as Error).message); }
     finally { setSummarizing(false); }
+  };
+  // Narrate: Gemini retells the WHOLE message as a natural, podcast-style story
+  // (not verbatim), then reads it aloud — for listening to a long message like an
+  // audio overview rather than a word-for-word read.
+  const doNarrate = async () => {
+    if (!cur || narrating) return;
+    setNarrating(true); setErr(null); setSummary(null); setNarration(null); stopSpeak();
+    try {
+      const res = await fetch('/__fleet/narrate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: cur.text }) });
+      const j = await res.json().catch(() => ({ error: `narrate ${res.status}` })) as { narration?: string; error?: string };
+      if (j.error || !j.narration) setErr(j.error || 'no narration');
+      else { setNarration(j.narration); speak(j.narration); }
+    } catch (e) { setErr((e as Error).message); }
+    finally { setNarrating(false); }
   };
   // ← = backward (older), → = forward (newer)
   useEffect(() => {
@@ -106,6 +122,10 @@ export function MessageReader({ paneId, title, onClose }: { paneId: string; titl
               className="px-3 py-1.5 rounded-lg text-[12px] disabled:opacity-40"
               style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }}
               title="Gemini summary of this message, read aloud">{summarizing ? '📝 summarising…' : '📝 Summary'}</button>
+            <button onClick={doNarrate} disabled={narrating}
+              className="px-3 py-1.5 rounded-lg text-[12px] disabled:opacity-40"
+              style={{ background: '#f59e0b22', color: '#fcd34d', border: '1px solid #f59e0b55' }}
+              title="Gemini retells the whole message as a natural podcast-style story, read aloud">{narrating ? '📻 เล่าเรื่อง…' : '📻 เล่าเรื่อง'}</button>
             {speaking && <button onClick={stopSpeak} className="px-3 py-1.5 rounded-lg text-[12px]"
               style={{ background: '#f8717122', color: '#fca5a5', border: '1px solid #f8717155' }}>■ Stop</button>}
             <span className="flex-1" />
@@ -119,6 +139,7 @@ export function MessageReader({ paneId, title, onClose }: { paneId: string; titl
           </div>
         )}
         {summary && <div className="px-4 py-2 text-[12px] text-violet-200/90 border-b border-white/10" style={{ background: '#a78bfa12' }}>📝 {summary}</div>}
+        {narration && <div className="px-4 py-2 text-[12px] text-amber-100/90 border-b border-white/10 whitespace-pre-wrap" style={{ background: '#f59e0b12' }}>📻 {narration}</div>}
 
         {err && <p className="px-4 py-3 text-[12px] text-red-300">⚠ {err}</p>}
         {!err && msgs == null && <p className="px-4 py-3 text-[12px] text-white/40">loading transcript…</p>}

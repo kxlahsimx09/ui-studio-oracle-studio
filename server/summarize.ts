@@ -26,7 +26,10 @@ export async function summarize(text: string): Promise<{ summary?: string; error
   // Pick the OUTPUT language explicitly (any Thai → Thai), so the summary matches
   // what the operator wants read aloud — a "same language" hint alone is unreliable.
   const lang = /[฀-๿]/.test(t) ? 'Thai (ภาษาไทย)' : 'English';
-  const prompt = `Summarise the message below in 1–2 short, clear sentences. Respond in ${lang}. It will be read aloud, so use plain words and no markdown. Output ONLY the summary.\n\n---\n${t}`;
+  // The listener is the developer driving this agent fleet — summarise for an
+  // engineer: lead with what was done / what broke / what's the next action, and
+  // keep technical terms (file names, commands, errors) intact.
+  const prompt = `You are briefing a software developer about one of their AI coding agents. Summarise the agent message below in 1–3 short, clear sentences for an engineer: focus on what was done, what's blocked or broken, and the next action. Keep technical terms, file names, and commands as-is. Respond in ${lang}. It will be read aloud, so use plain spoken words and no markdown. Output ONLY the summary.\n\n---\n${t}`;
   try {
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${encodeURIComponent(key)}`,
