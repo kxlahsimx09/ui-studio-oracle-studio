@@ -356,6 +356,30 @@
   font-size: 13px; pointer-events: none; filter: drop-shadow(0 1px 2px #000);
 }
 
+/* Read-aloud speaker — a big 🔊 floating over the talking agent's head, so you
+   can see whose message is being spoken. Click → pause / resume / stop menu. */
+.town-speaker {
+  position: absolute; left: 50%; top: -22px; transform: translateX(-50%);
+  font-size: 24px; line-height: 1; pointer-events: auto; cursor: pointer; z-index: 8;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.75));
+  animation: town-speaker-pulse 0.85s ease-in-out infinite;
+}
+.town-speaker-paused { animation: none; opacity: 0.85; }
+@keyframes town-speaker-pulse {
+  0%, 100% { transform: translateX(-50%) scale(1); }
+  50%      { transform: translateX(-50%) scale(1.22); }
+}
+.town-speaker-menu {
+  position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 3px;
+  display: flex; gap: 4px; white-space: nowrap; z-index: 9;
+}
+.town-speaker-menu button {
+  font-size: 10px; line-height: 1; padding: 3px 6px; border-radius: 6px; cursor: pointer;
+  background: rgba(20,16,30,0.96); color: #e9d5ff; border: 1px solid rgba(168,139,250,0.55);
+}
+.town-speaker-menu button:hover { background: rgba(45,33,66,0.98); }
+@media (prefers-reduced-motion: reduce) { .town-speaker { animation: none; } }
+
 /* ---- Staging district: env health as pixel buildings on grass ---- */
 .staging-band {
   margin-top: 12px; padding: 10px 12px; border-radius: 12px;

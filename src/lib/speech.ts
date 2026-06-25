@@ -64,10 +64,42 @@ function pcmToWav(pcm: Uint8Array, rate: number): Blob {
   return new Blob([buf], { type: 'audio/wav' });
 }
 
+// ── Global "who is speaking" registry ──────────────────────────────────────
+// Only one agent speaks at a time (each speakText() stops the previous). The
+// town subscribes to this to float a 🔊 over the talking agent's head and to
+// drive pause / resume / stop from there. Keyed by the agent's tmux pane id.
+export interface SpeakingState { paneId: string; label: string; paused: boolean }
+let speaking: SpeakingState | null = null;
+const speakSubs = new Set<(s: SpeakingState | null) => void>();
+const emitSpeaking = () => { for (const fn of speakSubs) fn(speaking); };
+/** Subscribe to speaking changes; fires immediately with the current state. */
+export function subscribeSpeaking(fn: (s: SpeakingState | null) => void): () => void {
+  speakSubs.add(fn); fn(speaking); return () => { speakSubs.delete(fn); };
+}
+export const getSpeaking = (): SpeakingState | null => speaking;
+function beginSpeaking(meta?: { paneId: string; label: string }): void {
+  if (!meta) return;
+  speaking = { paneId: meta.paneId, label: meta.label, paused: false }; emitSpeaking();
+}
+function endSpeaking(): void { if (speaking) { speaking = null; emitSpeaking(); } }
+
 let currentAudio: HTMLAudioElement | null = null;
 export function stopSpeech(): void {
   try { currentAudio?.pause(); currentAudio = null; } catch { /* */ }
   try { window.speechSynthesis?.cancel(); } catch { /* */ }
+  endSpeaking();
+}
+/** Pause the current read in place (resumable from the same spot). */
+export function pauseSpeech(): void {
+  try { currentAudio?.pause(); } catch { /* */ }
+  try { window.speechSynthesis?.pause(); } catch { /* */ }
+  if (speaking && !speaking.paused) { speaking = { ...speaking, paused: true }; emitSpeaking(); }
+}
+/** Resume a paused read. */
+export function resumeSpeech(): void {
+  try { currentAudio?.play(); } catch { /* */ }
+  try { window.speechSynthesis?.resume(); } catch { /* */ }
+  if (speaking && speaking.paused) { speaking = { ...speaking, paused: false }; emitSpeaking(); }
 }
 
 function browserSpeak(clean: string, onEnd?: () => void): void {
@@ -81,11 +113,18 @@ function browserSpeak(clean: string, onEnd?: () => void): void {
 }
 
 /** Read text aloud — natural Gemini TTS, browser-voice fallback on quota/length/
- *  error. onStart fires when audio actually begins, onEnd when it finishes. */
-export async function speakText(raw: string, voice: string, cb?: { onStart?: () => void; onEnd?: () => void }): Promise<void> {
+ *  error. onStart fires when audio actually begins, onEnd when it finishes. Pass
+ *  `meta` to register the agent in the speaking registry (town speaker overlay). */
+export async function speakText(
+  raw: string, voice: string,
+  cb?: { onStart?: () => void; onEnd?: () => void },
+  meta?: { paneId: string; label: string },
+): Promise<void> {
   stopSpeech();
   const clean = cleanForSpeech(raw);
   if (!clean) { cb?.onEnd?.(); return; }
+  const onStart = () => { beginSpeaking(meta); cb?.onStart?.(); };
+  const onEnd = () => { endSpeaking(); cb?.onEnd?.(); };
   if (clean.length <= 5000) {
     try {
       const res = await fetch('/__fleet/tts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: clean, voice }) });
@@ -93,14 +132,14 @@ export async function speakText(raw: string, voice: string, cb?: { onStart?: () 
       if (j.audio) {
         const url = URL.createObjectURL(pcmToWav(base64ToBytes(j.audio), j.rate || 24000));
         const a = new Audio(url); currentAudio = a;
-        a.onended = () => { URL.revokeObjectURL(url); currentAudio = null; cb?.onEnd?.(); };
-        a.onerror = () => { URL.revokeObjectURL(url); browserSpeak(clean, cb?.onEnd); };
-        cb?.onStart?.();
+        a.onended = () => { URL.revokeObjectURL(url); currentAudio = null; onEnd(); };
+        a.onerror = () => { URL.revokeObjectURL(url); browserSpeak(clean, onEnd); };
+        onStart();
         await a.play();
         return;
       }
     } catch { /* fall through */ }
   }
-  cb?.onStart?.();
-  browserSpeak(clean, cb?.onEnd); // fallback
+  onStart();
+  browserSpeak(clean, onEnd); // fallback
 }

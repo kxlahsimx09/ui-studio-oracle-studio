@@ -85,7 +85,8 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
       if (r.error || !r.summary) { setErr(`summary: ${r.error || 'none'}`); setSumState('idle'); return; }
       setSumText(r.summary);
       setSumState('speaking');
-      await speakText(r.summary, getVoice(), { onEnd: () => setSumState('idle') });
+      const label = `${cos.title}${agent.label && agent.label !== 'oracle' ? '·' + agent.label : ''}`;
+      await speakText(r.summary, getVoice(), { onEnd: () => setSumState('idle') }, { paneId: agent.paneId, label });
     } catch (e) { setErr((e as Error).message); setSumState('idle'); }
   };
   useEffect(() => () => { stopSpeech(); }, []); // stop audio on close

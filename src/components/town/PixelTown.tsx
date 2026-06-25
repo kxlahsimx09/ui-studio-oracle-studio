@@ -21,6 +21,7 @@ import type { AgentLink } from '../../lib/agent-links';
 import { AgentNoteEditor } from './AgentNoteEditor';
 import type { NotePending } from './AgentNoteEditor';
 import { saveNote, deleteNote } from '../../lib/agent-notes';
+import { subscribeSpeaking, pauseSpeech, resumeSpeech, stopSpeech, type SpeakingState } from '../../lib/speech';
 
 interface Actor {
   id: string; x: number; y: number; tx: number; ty: number;
@@ -84,6 +85,12 @@ export function PixelTown(
   useEffect(() => { agentsRef.current = state.agents; }, [state.agents]);
   const [pending, setPending] = useState<PendingLink | null>(null);
   const [notePending, setNotePending] = useState<NotePending | null>(null);
+  // Read-aloud: which agent (by pane id) is currently speaking, so a 🔊 floats over
+  // its head with a pause/stop control. Only one agent speaks at a time.
+  const [speaking, setSpeaking] = useState<SpeakingState | null>(null);
+  const [speakerMenu, setSpeakerMenu] = useState(false);
+  useEffect(() => subscribeSpeaking(setSpeaking), []);
+  useEffect(() => { if (!speaking) setSpeakerMenu(false); }, [speaking]);
   const labelFor = (a: FleetAgent) => {
     const title = costumeFor(a.role).title;
     return a.label && a.label !== 'oracle' ? `${title}·${a.label}` : title;
@@ -504,6 +511,24 @@ export function PixelTown(
             ) : a.status === 'idle' ? (
               <span className="town-bubble town-bubble-idle">💤</span>
             ) : null}
+            {/* Read-aloud: a big speaker floats over the talking agent's head so you
+                know whose words you're hearing. Click → pause / resume / stop. */}
+            {a.paneId && speaking?.paneId === a.paneId && (
+              <span className={`town-speaker${speaking.paused ? ' town-speaker-paused' : ''}`}
+                title={`${speaking.label} is speaking — click to pause / stop`}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); setSpeakerMenu((v) => !v); }}>
+                {speaking.paused ? '🔈' : '🔊'}
+                {speakerMenu && (
+                  <span className="town-speaker-menu" onPointerDown={(e) => e.stopPropagation()}>
+                    <button onClick={(e) => { e.stopPropagation(); speaking.paused ? resumeSpeech() : pauseSpeech(); }}>
+                      {speaking.paused ? '▶ resume' : '⏸ pause'}
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); stopSpeech(); setSpeakerMenu(false); }}>■ stop</button>
+                  </span>
+                )}
+              </span>
+            )}
           </div>
         );
       })}

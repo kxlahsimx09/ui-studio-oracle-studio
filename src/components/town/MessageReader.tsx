@@ -2,49 +2,10 @@
 // (the live pane scrolls long replies away) rendered as clean, wide, readable
 // text; ← steps backward to earlier messages, → forward. Parses the session
 // transcript, which delimits turns with "──────── 🤖 opus ────────" headers.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { fetchTranscript } from '../../lib/fleet';
-
-// Natural Gemini TTS voices (mirror server TTS_VOICES). Persisted choice.
-const VOICES = ['Kore', 'Puck', 'Zephyr', 'Charon', 'Aoede', 'Leda', 'Orus', 'Fenrir', 'Algieba', 'Sulafat'];
-const VOICE_KEY = 'town:tts-voice';
-
-function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const u = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-  return u;
-}
-// Wrap raw 16-bit mono PCM in a WAV header so an <audio> element can play it.
-function pcmToWav(pcm: Uint8Array, rate: number): Blob {
-  const blockAlign = 2, byteRate = rate * blockAlign;
-  const buf = new ArrayBuffer(44 + pcm.length);
-  const dv = new DataView(buf);
-  const ws = (o: number, s: string) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
-  ws(0, 'RIFF'); dv.setUint32(4, 36 + pcm.length, true); ws(8, 'WAVE'); ws(12, 'fmt ');
-  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
-  dv.setUint32(24, rate, true); dv.setUint32(28, byteRate, true); dv.setUint16(32, blockAlign, true);
-  dv.setUint16(34, 16, true); ws(36, 'data'); dv.setUint32(40, pcm.length, true);
-  new Uint8Array(buf, 44).set(pcm);
-  return new Blob([buf], { type: 'audio/wav' });
-}
-
-interface Msg { who: string; text: string }
-
-function parseMessages(transcript: string): Msg[] {
-  const re = /──────── (.+?) ────────\n/g;
-  const heads: { who: string; from: number; to: number }[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(transcript)) !== null) heads.push({ who: m[1], from: m.index, to: re.lastIndex });
-  const out: Msg[] = [];
-  for (let i = 0; i < heads.length; i++) {
-    const end = i + 1 < heads.length ? heads[i + 1].from : transcript.length;
-    const text = transcript.slice(heads[i].to, end).trim();
-    if (text) out.push({ who: heads[i].who, text });
-  }
-  return out;
-}
+import { speakText, stopSpeech, parseMessages, VOICES, VOICE_KEY, type Msg } from '../../lib/speech';
 
 // Clickable URLs in an otherwise plain, pre-wrapped message.
 const URL_RE = /(https?:\/\/[^\s<>"'`)\]}]+)/g;
@@ -65,23 +26,6 @@ function linkify(s: string): ReactNode[] {
   return out;
 }
 
-// Strip markdown / code / links / emoji / box-drawing so a TTS voice reads cleanly
-// (these special characters otherwise get spelled out or mangled).
-function cleanForSpeech(s: string): string {
-  return (s || '')
-    .replace(/```[\s\S]*?```/g, ' โค้ด. ')            // fenced code → a short spoken marker
-    .replace(/`([^`]+)`/g, '$1')                       // inline code → its text
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')             // images
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')           // links → link text
-    .replace(/https?:\/\/\S+/g, ' ลิงก์ ')             // bare URLs → "link"
-    .replace(/[#>*_~`|]+/g, ' ')                       // markdown punctuation
-    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{2500}-\u{257F}]/gu, ' ') // emoji / arrows / box-drawing
-    .replace(/[\uFE0F\u200D]/g, '')                    // variation selectors / zero-width joiner
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\n{2,}/g, '. ')
-    .trim();
-}
-
 export function MessageReader({ paneId, title, onClose }: { paneId: string; title: string; onClose: () => void }) {
   const [msgs, setMsgs] = useState<Msg[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -91,43 +35,17 @@ export function MessageReader({ paneId, title, onClose }: { paneId: string; titl
   const [summary, setSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const [voice, setVoice] = useState(() => { try { return localStorage.getItem(VOICE_KEY) || 'Kore'; } catch { return 'Kore'; } });
-  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const stopSpeak = () => {
-    try { audioRef.current?.pause(); audioRef.current = null; } catch { /* */ }
-    try { window.speechSynthesis?.cancel(); } catch { /* */ } setSpeaking(false); setLoadingAudio(false);
-  };
-  const browserSpeak = (clean: string) => {
-    const synth = window.speechSynthesis;
-    if (!synth) { setSpeaking(false); return; }
-    synth.cancel();
-    const u = new SpeechSynthesisUtterance(clean.slice(0, 32000));
-    u.lang = /[฀-๿]/.test(clean) ? 'th-TH' : 'en-US';
-    u.onend = () => setSpeaking(false); u.onerror = () => setSpeaking(false);
-    setSpeaking(true); synth.speak(u);
-  };
-  // Read aloud: natural Gemini TTS first; on quota/length/error → browser voice.
+  const stopSpeak = () => { stopSpeech(); setSpeaking(false); setLoadingAudio(false); };
+  // Read aloud via the shared speech module (Gemini TTS, browser-voice fallback).
+  // Passing { paneId, label } registers this agent in the global speaking registry
+  // so the town floats a 🔊 over its head and can pause/stop the read from there.
   const speak = async (raw: string) => {
-    stopSpeak();
-    const clean = cleanForSpeech(raw);
-    if (!clean) return;
-    setSpeaking(true);
-    if (clean.length <= 5000) {
-      setLoadingAudio(true);
-      try {
-        const res = await fetch('/__fleet/tts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: clean, voice }) });
-        const j = await res.json().catch(() => ({})) as { audio?: string; rate?: number; error?: string };
-        setLoadingAudio(false);
-        if (j.audio) {
-          const url = URL.createObjectURL(pcmToWav(base64ToBytes(j.audio), j.rate || 24000));
-          const a = new Audio(url); audioRef.current = a;
-          a.onended = () => { setSpeaking(false); URL.revokeObjectURL(url); };
-          a.onerror = () => { browserSpeak(clean); URL.revokeObjectURL(url); };
-          await a.play(); return;
-        }
-      } catch { setLoadingAudio(false); }
-    }
-    browserSpeak(clean); // fallback (quota, too long, or no key)
+    setSpeaking(true); setLoadingAudio(true);
+    await speakText(raw, voice, {
+      onStart: () => setLoadingAudio(false),
+      onEnd: () => { setSpeaking(false); setLoadingAudio(false); },
+    }, { paneId, label: title });
   };
   useEffect(() => () => { stopSpeak(); }, []); // stop on unmount
 
