@@ -90,16 +90,14 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
   };
   useEffect(() => () => { stopSpeech(); }, []); // stop audio on close
 
-  // Keyboard shortcut: Fn+S (if the browser exposes Fn) or Alt+S → summarise +
-  // read the latest message, while this agent window is open. Ref keeps the
-  // handler fresh without re-binding the listener.
+  // Keyboard shortcut: Ctrl+S (Cmd+S on Mac) → summarise + read the latest message,
+  // while this agent window is open. preventDefault blocks the browser Save dialog.
+  // Ref keeps the handler fresh without re-binding the listener.
   const summaryRef = useRef(doSummaryRead);
   useEffect(() => { summaryRef.current = doSummaryRead; });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== 'KeyS') return;
-      const fn = (() => { try { return e.getModifierState('Fn'); } catch { return false; } })();
-      if (e.altKey || fn) { e.preventDefault(); summaryRef.current(); }
+      if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); summaryRef.current(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -254,7 +252,7 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
         <button onClick={doBookmark} disabled={bm === 'saving'} className="text-[10px] px-1.5 py-0.5 rounded disabled:opacity-40" style={{ background: '#fbbf2422', color: '#fbbf24', border: '1px solid #fbbf2455' }} title="bookmark this agent → respawn it later (same worktree + account, with context)">{bm === 'done' ? '🔖 saved' : bm === 'err' ? '🔖 failed' : bm === 'saving' ? '🔖 …' : '🔖 bookmark'}</button>
       )}
       <button onClick={doCarryOver} disabled={carrying} className="text-[10px] px-1.5 py-0.5 rounded disabled:opacity-40" style={{ background: '#22d3ee22', color: '#67e8f9', border: '1px solid #22d3ee55' }} title="context low? hand off to a fresh clean-context agent, briefed from this session">{carrying ? '↪ …' : '↪ carry over'}</button>
-      <button onClick={doSummaryRead} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }} title="summarise the latest message + read it aloud — shortcut: Alt+S (or Fn+S)">{sumState === 'working' ? '🔊 …' : sumState === 'speaking' ? '■ stop' : '🔊 summary'}</button>
+      <button onClick={doSummaryRead} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }} title="summarise the latest message + read it aloud — shortcut: Ctrl+S (⌘S on Mac)">{sumState === 'working' ? '🔊 …' : sumState === 'speaking' ? '■ stop' : '🔊 summary'}</button>
       <button onClick={() => { closeMore(); setShowReader(true); }} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: '#22c55e22', color: '#86efac', border: '1px solid #22c55e55' }} title="open the latest message in a clean reader">📖 read</button>
       <button onClick={() => { closeMore(); setShowHandoffs(true); }} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: '#38bdf822', color: '#7dd3fc', border: '1px solid #38bdf855' }} title="find handoff file paths mentioned in this session and copy one">📂 handoffs</button>
       <button onClick={() => { closeMore(); setVariantOpen(true); }} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }} title="change this agent's sprite colour/variant on the map">🎨 variant</button>
