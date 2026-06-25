@@ -12,6 +12,7 @@ export interface Suite {
   ownerGated?: boolean; ownerGoEnv?: string;
   optionalEnv?: { name: string; description?: string }[];
   cast?: string;
+  batch?: boolean;   // a run-catalog.sh "run everything" entry, not a single card
 }
 export interface RunState {
   status: 'idle' | 'running' | 'done';

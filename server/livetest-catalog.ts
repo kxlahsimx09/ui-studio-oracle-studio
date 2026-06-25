@@ -21,6 +21,7 @@ export interface Suite {
   ownerGated?: boolean; ownerGoEnv?: string;   // moves real money/bot
   optionalEnv?: { name: string; description?: string }[];
   cast?: string;
+  batch?: boolean;            // a run-catalog.sh "run everything" entry, not a single card
   controls: Control[];        // always [] (kept so the client type is unchanged)
 }
 
@@ -45,13 +46,29 @@ function mapCard(c: CatalogCard): Suite {
 
 export interface Catalog { suites: Suite[]; summary: unknown; root: string | null }
 
+// "Run the whole catalog" entries — only when poc/integration/scripts/run-catalog.sh
+// exists in this checkout (it runs every runnable card serially; reads the catalog).
+function batchSuites(root: string): Suite[] {
+  if (!existsSync(join(root, 'poc/integration/scripts/run-catalog.sh'))) return [];
+  const mk = (id: string, title: string, command: string, ownerGated: boolean): Suite => ({
+    id, title, label: `${id} · ${title}`, command, speed: 'BATCH', epic: 'CATALOG',
+    result: null, runnable: true, ownerGated, optionalEnv: [], batch: true, controls: [],
+  });
+  return [
+    mk('ALL-FAST', 'Run all · FAST only (no money, ~10–15 min)', './scripts/run-catalog.sh', false),
+    mk('ALL-PLAN', 'Plan only — print the run plan, run nothing', './scripts/run-catalog.sh --list', false),
+    mk('ALL-SLOW', 'Run all · FAST + SLOW (REAL bot/money, ~1.5–2 hr)', './scripts/run-catalog.sh --slow', true),
+    mk('ALL-SLOW-ONLY', 'Run all · SLOW only (REAL bot/money)', './scripts/run-catalog.sh --slow-only', true),
+  ];
+}
+
 function readCatalogAt(root: string): Catalog | null {
   const f = join(root, CATALOG_REL);
   if (!existsSync(f)) return null;
   try {
     const j = JSON.parse(readFileSync(f, 'utf8'));
     const cards = Array.isArray(j?.cards) ? (j.cards as CatalogCard[]) : [];
-    return { suites: cards.map(mapCard), summary: j?.summary ?? null, root };
+    return { suites: [...batchSuites(root), ...cards.map(mapCard)], summary: j?.summary ?? null, root };
   } catch { return null; }
 }
 

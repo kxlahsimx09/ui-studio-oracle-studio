@@ -60,9 +60,10 @@ export function LiveTestPanel({ agent, onClose }: { agent?: FleetAgent; onClose:
   const run = data?.run;
   const running = run?.status === 'running';
   const heldByOther = !!lock?.locked && lock.holder?.agent !== 'next-live-tester';
-  const fast = suites.filter((s) => s.runnable && s.speed === 'FAST');
-  const slow = suites.filter((s) => s.runnable && s.speed !== 'FAST');
-  const planned = suites.filter((s) => !s.runnable);
+  const batch = suites.filter((s) => s.batch);
+  const fast = suites.filter((s) => s.runnable && !s.batch && s.speed === 'FAST');
+  const slow = suites.filter((s) => s.runnable && !s.batch && s.speed !== 'FAST');
+  const planned = suites.filter((s) => !s.runnable && !s.batch);
 
   const pick = (id: string) => { setSuiteId(id); setMsg(null); };
   useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [run?.log]);
@@ -112,6 +113,8 @@ export function LiveTestPanel({ agent, onClose }: { agent?: FleetAgent; onClose:
         {!suites.length && <div className="mb-2 text-[11px] text-amber-300/80">no catalog found in this agent's repo — try ⤓ pull main.</div>}
 
         {/* card picker — grouped */}
+        {!!batch.length && <div className="mb-2"><div className="text-[10px] text-white/40 mb-1">▶ run the whole catalog (serial)</div>
+          <div className="flex flex-wrap gap-1.5">{batch.map((s) => <CardButton key={s.id} s={s} active={suiteId === s.id} onClick={() => pick(s.id)} />)}</div></div>}
         {!!fast.length && <div className="mb-2"><div className="text-[10px] text-white/40 mb-1">FAST · regression roster</div>
           <div className="flex flex-wrap gap-1.5">{fast.map((s) => <CardButton key={s.id} s={s} active={suiteId === s.id} onClick={() => pick(s.id)} />)}</div></div>}
         {!!slow.length && <div className="mb-2"><div className="text-[10px] text-white/40 mb-1">SLOW · real bot / callbacks</div>
