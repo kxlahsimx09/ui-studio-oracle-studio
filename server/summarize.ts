@@ -10,11 +10,13 @@ import { homedir } from 'node:os';
 const KEY_FILE = join(homedir(), '.fleet-town', 'gemini.key');
 const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
-function apiKey(): string {
+/** Google AI key — env GEMINI_API_KEY, else ~/.fleet-town/gemini.key. Shared by tts. */
+export function geminiKey(): string {
   if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY.trim();
   try { if (existsSync(KEY_FILE)) return readFileSync(KEY_FILE, 'utf8').trim(); } catch { /* */ }
   return '';
 }
+const apiKey = geminiKey;
 
 export async function summarize(text: string): Promise<{ summary?: string; error?: string }> {
   const key = apiKey();

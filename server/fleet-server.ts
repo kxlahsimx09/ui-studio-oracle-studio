@@ -23,6 +23,7 @@ import { getDeploy, startDeploy, startPullMain, startMockPortal, cancelDeploy } 
 import { listNotes, setNote, removeNote } from './agent-notes';
 import { getVerify, runVerify } from './verify';
 import { summarize } from './summarize';
+import { tts, TTS_VOICES } from './tts';
 import { listPlans } from './usage';
 import { handlePush, startNotifyLoop } from './push';
 import { handleTelegram } from './telegram';
@@ -252,6 +253,15 @@ const server = Bun.serve({
         const b = (await req.json()) as { text?: string };
         return Response.json(await summarize(b.text || ''));
       } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    }
+    if (p === '/__fleet/tts') {
+      if (req.method === 'GET') return Response.json({ voices: TTS_VOICES });
+      if (req.method === 'POST') {
+        try {
+          const b = (await req.json()) as { text?: string; voice?: string };
+          return Response.json(await tts(b.text || '', b.voice || 'Kore'));
+        } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+      }
     }
     if (p === '/__fleet/respawn' && req.method === 'POST') {
       try {

@@ -2,9 +2,33 @@
 // (the live pane scrolls long replies away) rendered as clean, wide, readable
 // text; ← steps backward to earlier messages, → forward. Parses the session
 // transcript, which delimits turns with "──────── 🤖 opus ────────" headers.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { fetchTranscript } from '../../lib/fleet';
+
+// Natural Gemini TTS voices (mirror server TTS_VOICES). Persisted choice.
+const VOICES = ['Kore', 'Puck', 'Zephyr', 'Charon', 'Aoede', 'Leda', 'Orus', 'Fenrir', 'Algieba', 'Sulafat'];
+const VOICE_KEY = 'town:tts-voice';
+
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const u = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+  return u;
+}
+// Wrap raw 16-bit mono PCM in a WAV header so an <audio> element can play it.
+function pcmToWav(pcm: Uint8Array, rate: number): Blob {
+  const blockAlign = 2, byteRate = rate * blockAlign;
+  const buf = new ArrayBuffer(44 + pcm.length);
+  const dv = new DataView(buf);
+  const ws = (o: number, s: string) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+  ws(0, 'RIFF'); dv.setUint32(4, 36 + pcm.length, true); ws(8, 'WAVE'); ws(12, 'fmt ');
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, rate, true); dv.setUint32(28, byteRate, true); dv.setUint16(32, blockAlign, true);
+  dv.setUint16(34, 16, true); ws(36, 'data'); dv.setUint32(40, pcm.length, true);
+  new Uint8Array(buf, 44).set(pcm);
+  return new Blob([buf], { type: 'audio/wav' });
+}
 
 interface Msg { who: string; text: string }
 
@@ -63,25 +87,49 @@ export function MessageReader({ paneId, title, onClose }: { paneId: string; titl
   const [err, setErr] = useState<string | null>(null);
   const [idx, setIdx] = useState(0);
   const [speaking, setSpeaking] = useState(false);
+  const [loadingAudio, setLoadingAudio] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
+  const [voice, setVoice] = useState(() => { try { return localStorage.getItem(VOICE_KEY) || 'Kore'; } catch { return 'Kore'; } });
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const speak = (raw: string) => {
+  const stopSpeak = () => {
+    try { audioRef.current?.pause(); audioRef.current = null; } catch { /* */ }
+    try { window.speechSynthesis?.cancel(); } catch { /* */ } setSpeaking(false); setLoadingAudio(false);
+  };
+  const browserSpeak = (clean: string) => {
     const synth = window.speechSynthesis;
-    if (!synth) { setErr('this browser has no speech synthesis'); return; }
+    if (!synth) { setSpeaking(false); return; }
     synth.cancel();
+    const u = new SpeechSynthesisUtterance(clean.slice(0, 32000));
+    u.lang = /[฀-๿]/.test(clean) ? 'th-TH' : 'en-US';
+    u.onend = () => setSpeaking(false); u.onerror = () => setSpeaking(false);
+    setSpeaking(true); synth.speak(u);
+  };
+  // Read aloud: natural Gemini TTS first; on quota/length/error → browser voice.
+  const speak = async (raw: string) => {
+    stopSpeak();
     const clean = cleanForSpeech(raw);
     if (!clean) return;
-    const u = new SpeechSynthesisUtterance(clean.slice(0, 32000));
-    u.lang = /[฀-๿]/.test(clean) ? 'th-TH' : 'en-US'; // Thai if any Thai chars
-    u.onend = () => setSpeaking(false);
-    u.onerror = () => setSpeaking(false);
     setSpeaking(true);
-    synth.speak(u);
+    if (clean.length <= 5000) {
+      setLoadingAudio(true);
+      try {
+        const res = await fetch('/__fleet/tts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: clean, voice }) });
+        const j = await res.json().catch(() => ({})) as { audio?: string; rate?: number; error?: string };
+        setLoadingAudio(false);
+        if (j.audio) {
+          const url = URL.createObjectURL(pcmToWav(base64ToBytes(j.audio), j.rate || 24000));
+          const a = new Audio(url); audioRef.current = a;
+          a.onended = () => { setSpeaking(false); URL.revokeObjectURL(url); };
+          a.onerror = () => { browserSpeak(clean); URL.revokeObjectURL(url); };
+          await a.play(); return;
+        }
+      } catch { setLoadingAudio(false); }
+    }
+    browserSpeak(clean); // fallback (quota, too long, or no key)
   };
-  const stopSpeak = () => { try { window.speechSynthesis?.cancel(); } catch { /* */ } setSpeaking(false); };
-  // Stop speech on close/unmount.
-  useEffect(() => () => { try { window.speechSynthesis?.cancel(); } catch { /* */ } }, []);
+  useEffect(() => () => { stopSpeak(); }, []); // stop on unmount
 
   useEffect(() => {
     let alive = true;
@@ -132,16 +180,24 @@ export function MessageReader({ paneId, title, onClose }: { paneId: string; titl
 
         {cur && (
           <div className="flex items-center gap-2 px-4 py-2 border-b border-white/10 flex-wrap">
-            <button onClick={() => speak(cur.text)}
-              className="px-3 py-1.5 rounded-lg text-[12px]"
+            <button onClick={() => speak(cur.text)} disabled={loadingAudio}
+              className="px-3 py-1.5 rounded-lg text-[12px] disabled:opacity-50"
               style={{ background: '#22c55e22', color: '#86efac', border: '1px solid #22c55e55' }}
-              title="read the whole message aloud (browser speech)">🔊 Full read</button>
+              title="read the whole message aloud (Gemini TTS)">{loadingAudio ? '🔊 …' : '🔊 Full read'}</button>
             <button onClick={doSummary} disabled={summarizing}
               className="px-3 py-1.5 rounded-lg text-[12px] disabled:opacity-40"
               style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }}
               title="Gemini summary of this message, read aloud">{summarizing ? '📝 summarising…' : '📝 Summary'}</button>
             {speaking && <button onClick={stopSpeak} className="px-3 py-1.5 rounded-lg text-[12px]"
               style={{ background: '#f8717122', color: '#fca5a5', border: '1px solid #f8717155' }}>■ Stop</button>}
+            <span className="flex-1" />
+            <label className="text-[11px] text-white/45 flex items-center gap-1" title="Gemini TTS voice — pick the most natural to your ear">
+              🎙
+              <select value={voice} onChange={(e) => { setVoice(e.target.value); try { localStorage.setItem(VOICE_KEY, e.target.value); } catch { /* */ } }}
+                className="bg-white/10 rounded px-1 py-0.5 text-white/80">
+                {VOICES.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </label>
           </div>
         )}
         {summary && <div className="px-4 py-2 text-[12px] text-violet-200/90 border-b border-white/10" style={{ background: '#a78bfa12' }}>📝 {summary}</div>}
