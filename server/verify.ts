@@ -39,6 +39,7 @@ const LABELS: Record<string, { name: string; group: CheckGroup }> = {
   'cf-worker': { name: 'CF worker', group: 'sync' },
   'admin-ui': { name: 'Admin UI', group: 'sync' },
   'bank-bot': { name: 'Bank-bot fleet', group: 'sync' },        // currency of the deployed image
+  'bank-bot fleetcur': { name: 'Bank-bot fleet · live', group: 'sync' }, // per-service LIVE ECS image currency (#933)
   'deposits-create': { name: 'deposits-create EF', group: 'service' },
   'clock/reset rpcs': { name: 'Clock / reset RPCs', group: 'service' },
   'admin-ui alias': { name: 'Admin UI portal', group: 'service' },
