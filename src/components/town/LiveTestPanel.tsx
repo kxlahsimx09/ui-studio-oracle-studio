@@ -175,6 +175,7 @@ export function LiveTestPanel({ agent, onClose }: { agent?: FleetAgent; onClose:
             <div className="flex items-center gap-2 mb-1">
               <b className="text-white/90">{suite.id}</b><span className="text-white/70">{suite.title}</span>
               <span className="px-1.5 py-0.5 rounded text-[9px]" style={speedStyle(suite.speed)}>{suite.speed}</span>
+              {suite.redFirst && <span className="px-1.5 py-0.5 rounded text-[9px]" style={{ background: '#fbbf2422', color: '#fcd34d', border: '1px solid #fbbf2455' }} title="RED is EXPECTED here (RED-first → GREEN once the fix deploys) — a RED result is not a failure">RED-FIRST</span>}
               {suite.epic && <span className="text-[9px] text-white/40">{suite.epic}</span>}
               {suite.result && <span className="ml-auto text-[10px]" style={{ color: (suite.result || '').toUpperCase().startsWith('GREEN') ? '#86efac' : '#fcd34d' }}>{suite.result}</span>}
             </div>

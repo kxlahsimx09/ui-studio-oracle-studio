@@ -10,6 +10,7 @@ export interface Suite {
   epic?: string; state?: string; result?: string | null;
   runnable: boolean; reason?: string;       // not_runnable_reason
   ownerGated?: boolean; ownerGoEnv?: string;
+  redFirst?: boolean;                        // RED is expected (RED-first → GREEN on deploy)
   optionalEnv?: { name: string; description?: string }[];
   cast?: string;
   batch?: boolean;   // a run-catalog.sh "run everything" entry, not a single card

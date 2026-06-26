@@ -204,8 +204,10 @@ async function runSequence(cards: Suite[], dir: string, runEnv: Record<string, s
       proc.on('close', (code) => { child = null; resolve(code ?? -1); });
       proc.on('error', () => { child = null; resolve(-1); });
     });
-    if (item) { item.status = 'done'; item.rc = last; item.color = last === 0 ? 'green' : 'red'; item.summary = `rc=${last}`; }
-    push(`${s.id}  rc=${last}`);
+    // A red_first card EXPECTS a non-zero exit (RED-first → GREEN on deploy), so
+    // don't paint it red — amber means "expected RED", matching the batch board.
+    if (item) { item.status = 'done'; item.rc = last; item.redfirst = !!s.redFirst; item.color = last === 0 ? 'green' : (s.redFirst ? 'amber' : 'red'); item.summary = `rc=${last}${s.redFirst ? ' [RED-FIRST]' : ''}`; }
+    push(`${s.id}  rc=${last}${s.redFirst ? '  [RED-FIRST: RED expected]' : ''}`);
   }
   run.status = 'done'; run.endedAt = Date.now(); run.exitCode = last;
   push(stopRequested ? '■ sequence cancelled' : `■ sequence done (${cards.length} cards)`);

@@ -19,6 +19,7 @@ export interface Suite {
   epic?: string; state?: string; result?: string | null;
   runnable: boolean; reason?: string;          // not_runnable_reason
   ownerGated?: boolean; ownerGoEnv?: string;   // moves real money/bot
+  redFirst?: boolean;                          // RED is EXPECTED (RED-first → GREEN on deploy)
   optionalEnv?: { name: string; description?: string }[];
   cast?: string;
   batch?: boolean;            // a run-catalog.sh "run everything" entry, not a single card
@@ -28,6 +29,7 @@ export interface Suite {
 interface CatalogCard {
   id: string; title?: string; epic?: string; speed?: string; state?: string; result?: string | null;
   runnable?: boolean; not_runnable_reason?: string; requires_owner_go?: boolean; owner_go_env?: string; cast?: string;
+  red_first?: boolean;
   exec?: { command?: string | null; optional_env?: { name: string; description?: string }[] };
 }
 
@@ -38,6 +40,7 @@ function mapCard(c: CatalogCard): Suite {
     epic: c.epic, state: c.state, result: c.result ?? null,
     runnable: !!c.runnable, reason: c.not_runnable_reason || '',
     ownerGated: !!c.requires_owner_go, ownerGoEnv: c.owner_go_env || undefined,
+    redFirst: !!c.red_first,
     optionalEnv: c.exec?.optional_env ?? [],
     cast: c.cast,
     controls: [],
