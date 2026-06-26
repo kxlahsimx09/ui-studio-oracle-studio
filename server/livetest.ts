@@ -6,40 +6,12 @@
 // per-leg colours are NOT a PASS/FAIL verdict (§ADR-21 — next-investigator owns L3).
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
 import { loadCatalog, type Catalog, type Suite } from './livetest-catalog';
+import { recordFromRun, latestLegs } from './livetest-history';
+import { cfg, repoRootForPane, type Cfg } from './livetest-git';
 import { getFleetState } from './fleet-probe';
 
-interface Cfg { integrationDir: string; lockScript: string; agent: string }
-const DEFAULT: Cfg = {
-  integrationDir: join(homedir(), 'Code/github.com/kxlahsimx09/mb-next-payment-gateway/poc/integration'),
-  lockScript: join(homedir(), 'Code/github.com/Soul-Brews-Studio/arra-oracle-v3/scripts/staging-lock.sh'),
-  agent: 'next-live-tester',
-};
-function cfg(): Cfg {
-  try { return { ...DEFAULT, ...JSON.parse(readFileSync(join(import.meta.dir, 'livetest-config.json'), 'utf8')) }; }
-  catch { return DEFAULT; }
-}
-
-// Resolve the repo the run should execute in FROM THE AGENT'S PANE — its tmux
-// cwd → git toplevel → that worktree's poc/integration. So a run uses the code the
-// opened live-tester is actually on (its worktree), not a fixed primary checkout.
-function paneCwd(id?: string): string | null {
-  if (!id || !/^%\d+$/.test(id)) return null;
-  try { return execFileSync('tmux', ['display-message', '-p', '-t', id, '#{pane_current_path}'], { encoding: 'utf8' }).trim(); }
-  catch { return null; }
-}
-function repoRoot(cwd: string): string | null {
-  try { return execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim(); }
-  catch { return null; }
-}
-function repoRootForPane(paneId?: string, fallbackIntegrationDir?: string): string | null {
-  const cwd = paneCwd(paneId);
-  const root = cwd ? repoRoot(cwd) : null;
-  if (root) return root;
-  return fallbackIntegrationDir ? join(fallbackIntegrationDir, '..', '..') : null;
-}
 // Per-card live progress for a "run the whole catalog" (run-catalog.sh) run —
 // parsed from its plan + START/result lines so the panel shows a real-time board.
 export type ProgColor = 'green' | 'amber' | 'red';
@@ -117,8 +89,9 @@ async function nltPane(agent: string): Promise<string> {
 }
 
 /** Start a suite run. Returns {ok} or {held} (lock taken) / {error}. paneId =
- *  the opened live-tester agent → run executes in THAT agent's worktree. */
-export async function startRun(suiteId: string, raw: Record<string, unknown>, campaign = 'livetest', paneId?: string):
+ *  the opened live-tester agent → run executes in THAT agent's worktree. trigger
+ *  marks who started it (manual click vs the nightly scheduler) for history. */
+export async function startRun(suiteId: string, raw: Record<string, unknown>, campaign = 'livetest', paneId?: string, trigger: 'manual' | 'scheduled' = 'manual'):
   Promise<{ ok: true } | { error: string } | { held: unknown }> {
   if (run.status === 'running') return { error: 'a run is already in progress' };
   const c = cfg();
@@ -150,6 +123,7 @@ export async function startRun(suiteId: string, raw: Record<string, unknown>, ca
   const runEnv = { ...process.env, PATH: [...extra, process.env.PATH || ''].filter(Boolean).join(':'), CAMPAIGN: campaign, ...(pane ? { TMUX_PANE: pane } : {}) } as Record<string, string>;
   void raw; // cards carry no per-run controls now — the env is baked into exec.command
 
+  stopRequested = false;
   run = { status: 'running', suite: suiteId, campaign, startedAt: Date.now(), log: [], exitCode: null, progress: s.batch ? [] : undefined };
   push(`▶ ${s.id} · ${s.title}`);
   push(`$ ${s.command}   (cwd ${dir.replace(homedir(), '~')})`);
@@ -167,55 +141,77 @@ export async function startRun(suiteId: string, raw: Record<string, unknown>, ca
     // not force-release a real run's lock).
     if (needsLock) { try { execFileSync('bash', [c.lockScript, 'release', '--agent', c.agent, '--force'], { encoding: 'utf8' }); } catch { /* */ } }
     child = null;
+    if (needsLock) recordFromRun(run, trigger, s.title); // --list previews aren't real runs
   });
   return { ok: true };
 }
 
+// Set by cancelRun → the sequential runner stops after the current card instead
+// of marching on to the next one.
+let stopRequested = false;
 export function cancelRun(): { ok: boolean } {
+  stopRequested = true;
   if (child) { try { child.kill('SIGINT'); } catch { /* */ } }
   return { ok: true };
 }
 
-/** Bring latest origin/main INTO the agent's repo (its worktree). Fast-forward
- *  when possible; if the agent's branch has diverged (its own commits), do a real
- *  merge commit. On conflict / dirty tree, ABORT cleanly and report — never leave
- *  the worktree half-merged. Used by the panel's "pull main" button. */
-export function pullMainRepo(paneId?: string): { ok: true; output: string } | { error: string } {
-  const root = repoRootForPane(paneId, cfg().integrationDir);
-  if (!root) return { error: 'could not resolve the agent repo (pane gone?)' };
-  const g = `git -C "${root}"`;
+/** Run an arbitrary SUBSET of catalog cards back-to-back as one run — for the
+ *  scheduler's "pick some cards" mode (run-catalog.sh only does FAST/SLOW, not a
+ *  per-id subset). Acquires the staging lock ONCE for the whole sequence, streams
+ *  each card's output into the shared run log + progress board, and records one
+ *  history entry at the end. Returns immediately; the sequence runs in background. */
+export async function startSequence(cardIds: string[], campaign = 'livetest', trigger: 'manual' | 'scheduled' = 'manual', paneId?: string):
+  Promise<{ ok: true } | { error: string } | { held: unknown }> {
+  if (run.status === 'running') return { error: 'a run is already in progress' };
+  const c = cfg();
+  const cat = catalogFor(paneId);
+  const cards = cardIds.map((id) => cat.suites.find((s) => s.id === id))
+    .filter((s): s is Suite => !!s && s.runnable && !!s.command);
+  if (!cat.root || !cards.length) return { error: 'no runnable cards in the selection (pull main on this agent?)' };
+  const dir = join(cat.root, 'poc/integration');
+  const pane = paneId || await nltPane(c.agent);
+  const lockEnv = { ...process.env, ...(pane ? { TMUX_PANE: pane } : {}) } as Record<string, string>;
   try {
-    const out = execFileSync('bash', ['-c',
-      `${g} fetch origin main 2>&1 && ` +
-      `if ${g} merge --ff-only origin/main 2>/dev/null; then echo "fast-forwarded to origin/main"; ` +
-      `elif ${g} merge --no-edit origin/main 2>&1; then echo "merged origin/main into $(${g} rev-parse --abbrev-ref HEAD)"; ` +
-      `else ${g} merge --abort 2>/dev/null || true; ` +
-      `echo "MERGE BLOCKED — origin/main conflicts with this branch (or the tree is dirty). Commit/stash WIP, then resolve 'git merge origin/main' in the agent."; exit 1; fi; ` +
-      `echo "now at $(${g} rev-parse --short HEAD) on $(${g} rev-parse --abbrev-ref HEAD)"`,
-    ], { encoding: 'utf8', timeout: 60000 });
-    return { ok: true, output: `${root.replace(homedir(), '~')}\n${out.trim()}` };
+    execFileSync('bash', [c.lockScript, 'acquire', '--agent', c.agent, '--campaign', campaign, '--reason', `sequence ${cards.length} cards`],
+      { env: lockEnv, encoding: 'utf8', timeout: 15000 });
   } catch (e) {
-    const ex = e as { stdout?: string; stderr?: string; message: string };
-    return { error: (ex.stdout || '') + (ex.stderr || '') || ex.message };
+    const ex = e as { status?: number };
+    if (ex.status === 3) { let holder: unknown = null; try { holder = JSON.parse(execFileSync('bash', [c.lockScript, 'status', '--json'], { encoding: 'utf8' })); } catch { /* */ } return { held: holder }; }
+    return { error: `lock acquire failed: ${(e as Error).message.slice(0, 120)}` };
   }
+  const extra = [join(homedir(), '.bun/bin'), join(homedir(), '.local/bin'), join(homedir(), 'go/bin')];
+  const runEnv = { ...process.env, PATH: [...extra, process.env.PATH || ''].filter(Boolean).join(':'), CAMPAIGN: campaign, ...(pane ? { TMUX_PANE: pane } : {}) } as Record<string, string>;
+  stopRequested = false;
+  run = { status: 'running', suite: `cards: ${cards.map((s) => s.id).join(',')}`, campaign, startedAt: Date.now(), log: [], exitCode: null,
+    progress: cards.map((s) => ({ id: s.id, speed: s.speed, status: 'pending' as const })) };
+  push(`▶ sequence · ${cards.length} card(s): ${cards.map((s) => s.id).join(', ')}`);
+  void runSequence(cards, dir, runEnv, c, trigger); // background; panel polls run state
+  return { ok: true };
 }
 
-// Best-effort: the most recently modified legs.json under <dir>/evidence/.
-function latestLegs(dir: string): { legs: unknown; dir: string } | null {
-  const root = join(dir, 'evidence');
-  if (!existsSync(root)) return null;
-  let best: { f: string; m: number } | null = null;
-  const walk = (d: string, depth: number) => {
-    if (depth > 6) return;
-    let ents: string[]; try { ents = readdirSync(d); } catch { return; }
-    for (const e of ents) {
-      const p = join(d, e); let st; try { st = statSync(p); } catch { continue; }
-      if (st.isDirectory()) walk(p, depth + 1);
-      else if (e === 'legs.json' && (!best || st.mtimeMs > best.m)) best = { f: p, m: st.mtimeMs };
-    }
-  };
-  walk(root, 0);
-  if (!best) return null;
-  try { return { legs: JSON.parse(readFileSync(best.f, 'utf8')), dir: best.f.replace(/\/legs\.json$/, '') }; }
-  catch { return null; }
+async function runSequence(cards: Suite[], dir: string, runEnv: Record<string, string>, c: Cfg, trigger: 'manual' | 'scheduled'): Promise<void> {
+  let last = 0;
+  for (const s of cards) {
+    if (stopRequested) break;
+    const item = run.progress?.find((x) => x.id === s.id); if (item) item.status = 'running';
+    push(`===== START ${s.id} (${s.speed}) =====`);
+    push(`$ ${s.command}`);
+    last = await new Promise<number>((resolve) => {
+      const proc = spawn('bash', ['-c', s.command], { cwd: dir, env: runEnv });
+      child = proc; run.pid = proc.pid;
+      const onData = (b: Buffer) => b.toString().split('\n').forEach((l) => { if (l) push(l); });
+      proc.stdout?.on('data', onData); proc.stderr?.on('data', onData);
+      proc.on('close', (code) => { child = null; resolve(code ?? -1); });
+      proc.on('error', () => { child = null; resolve(-1); });
+    });
+    if (item) { item.status = 'done'; item.rc = last; item.color = last === 0 ? 'green' : 'red'; item.summary = `rc=${last}`; }
+    push(`${s.id}  rc=${last}`);
+  }
+  run.status = 'done'; run.endedAt = Date.now(); run.exitCode = last;
+  push(stopRequested ? '■ sequence cancelled' : `■ sequence done (${cards.length} cards)`);
+  const found = latestLegs(dir);
+  if (found) { run.legs = found.legs; run.evidenceDir = found.dir; }
+  try { execFileSync('bash', [c.lockScript, 'release', '--agent', c.agent, '--force'], { encoding: 'utf8' }); } catch { /* */ }
+  recordFromRun(run, trigger, `${cards.length} cards`);
 }
+

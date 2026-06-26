@@ -65,3 +65,37 @@ export async function pullMainRepo(paneId?: string): Promise<{ ok?: boolean; out
   });
   return res.json().catch(() => ({ error: `pull ${res.status}` }));
 }
+/** Run an arbitrary subset of cards back-to-back now (same path the scheduler's
+ *  "pick some cards" mode uses). */
+export async function runSequence(cards: string[], campaign: string, paneId?: string): Promise<{ held?: unknown; error?: string; ok?: boolean }> {
+  const res = await fetch('/__fleet/livetest', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'sequence', cards, campaign, paneId }),
+  });
+  return res.json().catch(() => ({ error: `run ${res.status}` }));
+}
+
+// ── Nightly scheduler + run history ─────────────────────────────────────────
+export type SchedMode = 'fast' | 'full' | 'slow' | 'cards';
+export interface Schedule {
+  enabled: boolean; time: string; mode: SchedMode; cards: string[]; pullMain: boolean;
+  lastFired?: string; lastResult?: string;
+}
+export interface HistoryEntry {
+  id: string; suite: string; label?: string; trigger: 'manual' | 'scheduled'; campaign?: string;
+  startedAt: number; endedAt: number; exitCode: number | null;
+  colors: { green: number; amber: number; red: number };
+  cards?: { id: string; color?: string; rc?: number }[]; evidenceDir?: string;
+}
+
+export const getSchedule = (): Promise<Schedule> =>
+  fetch('/__fleet/livetest/schedule').then((r) => r.json());
+export const saveSchedule = (patch: Partial<Schedule>): Promise<Schedule> =>
+  fetch('/__fleet/livetest/schedule', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) }).then((r) => r.json());
+export const getHistory = (limit = 50): Promise<HistoryEntry[]> =>
+  fetch(`/__fleet/livetest/history?limit=${limit}`).then((r) => r.json()).then((d) => d.history || []).catch(() => []);
+
+/** Format an epoch-ms instant in Bangkok wall-clock for the history list. */
+export const bkk = (ms?: number): string => ms
+  ? new Date(ms).toLocaleString('en-GB', { timeZone: 'Asia/Bangkok', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })
+  : '—';

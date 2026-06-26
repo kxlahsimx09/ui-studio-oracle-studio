@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useLiveTest, runSuite, cancelRun, pullMainRepo, type Suite, type ProgItem } from '../../lib/livetest';
 import { useLock } from '../../lib/lock';
 import type { FleetAgent } from '../../lib/fleet';
+import { LiveTestSchedule } from './LiveTestSchedule';
+import { LiveTestHistory } from './LiveTestHistory';
 
 const COLOUR: Record<string, string> = { GREEN: '#4ade80', AMBER: '#fbbf24', RED: '#f87171', SKIPPED: '#64748b' };
 const PROG_DOT: Record<string, string> = { green: '#4ade80', amber: '#fbbf24', red: '#f87171' };
@@ -84,6 +86,8 @@ export function LiveTestPanel({ agent, onClose }: { agent?: FleetAgent; onClose:
   const [campaign, setCampaign] = useState('livetest');
   const [msg, setMsg] = useState<string | null>(null);
   const [pulling, setPulling] = useState(false);
+  const [showSched, setShowSched] = useState(false);
+  const [showHist, setShowHist] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
 
   const suites = data?.suites ?? [];
@@ -139,6 +143,18 @@ export function LiveTestPanel({ agent, onClose }: { agent?: FleetAgent; onClose:
             {pulling ? '⤓ pulling…' : '⤓ pull main'}
           </button>
         </div>
+
+        {/* nightly scheduler + run history */}
+        <div className="flex items-center gap-1.5 mb-2">
+          <button onClick={() => setShowSched((v) => !v)} className="px-2 py-1 rounded text-[10px]"
+            style={showSched ? { background: '#38bdf822', color: '#7dd3fc', border: '1px solid #38bdf866' } : { background: '#ffffff08', color: '#aaa', border: '1px solid #ffffff14' }}
+            title="schedule a nightly auto-run (Full or a card selection)">🌙 Schedule</button>
+          <button onClick={() => setShowHist((v) => !v)} className="px-2 py-1 rounded text-[10px]"
+            style={showHist ? { background: '#38bdf822', color: '#7dd3fc', border: '1px solid #38bdf866' } : { background: '#ffffff08', color: '#aaa', border: '1px solid #ffffff14' }}
+            title="past run results with timestamps">🕘 History</button>
+        </div>
+        {showSched && <LiveTestSchedule suites={suites} paneId={agent?.paneId} />}
+        {showHist && <LiveTestHistory />}
 
         {heldByOther && <div className="mb-2 rounded-lg border border-red-500/30 bg-red-500/5 px-2.5 py-1.5 text-[11px] text-red-300">🔒 staging held by <b>{lock?.holder?.agent}</b>{lock?.holder?.campaign ? ` (${lock.holder.campaign})` : ''} — Run disabled. Seize/wait via the 🔒 panel.</div>}
         {!suites.length && <div className="mb-2 text-[11px] text-amber-300/80">no catalog found in this agent's repo — try ⤓ pull main.</div>}

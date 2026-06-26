@@ -31,7 +31,10 @@ import { handleTelegram } from './telegram';
 import { getEnvStatus, startEnvProbe } from './env-probe';
 import { getUsage } from './usage';
 import { getLockState, releaseLock, setDisabled } from './lock-state';
-import { getCatalog, getRun, startRun, cancelRun, pullMainRepo } from './livetest';
+import { getCatalog, getRun, startRun, startSequence, cancelRun } from './livetest';
+import { pullMainRepo } from './livetest-git';
+import { getSchedule, setSchedule, tickSchedule } from './livetest-schedule';
+import { getHistory } from './livetest-history';
 
 const DIST = join(import.meta.dir, '..', 'dist');
 const PORT = Number(process.env.FLEET_PORT || 8788);
@@ -118,12 +121,23 @@ const server = Bun.serve({
 
     // Live-tester run panel: GET = suite catalog + current run state; POST {suite,env}
     // launches a run (lock-aware); POST {action:cancel} kills the active run.
+    if (p === '/__fleet/livetest/schedule') {
+      if (req.method === 'POST') {
+        try { const b = (await req.json()) as Record<string, unknown>; return Response.json(setSchedule(b)); }
+        catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+      }
+      return Response.json(getSchedule(), { headers: { 'cache-control': 'no-store' } });
+    }
+    if (p === '/__fleet/livetest/history') {
+      return Response.json({ history: getHistory(Number(url.searchParams.get('limit')) || 50) }, { headers: { 'cache-control': 'no-store' } });
+    }
     if (p === '/__fleet/livetest') {
       if (req.method === 'POST') {
         try {
-          const b = (await req.json()) as { suite?: string; env?: Record<string, unknown>; campaign?: string; action?: string; paneId?: string };
+          const b = (await req.json()) as { suite?: string; env?: Record<string, unknown>; campaign?: string; action?: string; paneId?: string; cards?: string[] };
           if (b.action === 'cancel') return Response.json(cancelRun());
           if (b.action === 'pull-main') { const r = pullMainRepo(b.paneId); return Response.json(r, { status: 'error' in r ? 400 : 200 }); }
+          if (b.action === 'sequence') { const r = await startSequence(b.cards || [], b.campaign || 'livetest', 'manual', b.paneId); return Response.json(r, { status: 'error' in r ? 400 : 200 }); }
           const r = await startRun(b.suite || '', b.env || {}, b.campaign || 'livetest', b.paneId);
           return Response.json(r, { status: 'error' in r ? 400 : 200 });
         } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
@@ -295,6 +309,9 @@ const server = Bun.serve({
 });
 
 console.log(`fleet-server listening on http://${server.hostname}:${server.port} (dist=${DIST})`);
+
+// Nightly live-test scheduler: check once a minute whether a scheduled run is due.
+setInterval(() => { void tickSchedule(); }, 60_000);
 
 // Watch the fleet and push notifications (team-idle / agent-waiting) to PWA subscribers.
 startNotifyLoop(() => getFleetState());
