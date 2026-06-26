@@ -3,7 +3,7 @@
 // main on both repos, or cancels. Poll fast while a run streams.
 import { useEffect, useRef, useState } from 'react';
 
-export type DeployMode = 'full' | 'ui' | 'migrations' | 'ef' | 'bankbot';
+export type DeployMode = 'full' | 'ui' | 'migrations' | 'ef' | 'bankbot' | 'portal';
 export interface DeployState {
   status: 'idle' | 'running' | 'done';
   action?: string;
@@ -82,5 +82,4 @@ export const startDeploy = (
   mode: DeployMode, dry: boolean, pull: boolean, allowDirty: boolean, skipGate: boolean,
 ) => post({ action: 'deploy', mode, dry, pull, allowDirty, skipGate });
 export const pullMain = () => post({ action: 'pull-main' });
-export const deployMockPortal = (dry: boolean, target = 'all') => post({ action: 'mock-portal', dry, target });
 export const cancelDeploy = () => post({ action: 'cancel' });

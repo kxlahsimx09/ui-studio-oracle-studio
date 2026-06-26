@@ -4,7 +4,7 @@
 // errors live. A separate button fetch+pulls main on both repos (gateway + UI).
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useDeploy, startDeploy, pullMain, deployMockPortal, cancelDeploy, type DeployMode } from '../../lib/deploy';
+import { useDeploy, startDeploy, pullMain, cancelDeploy, type DeployMode } from '../../lib/deploy';
 
 function Btn({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
   return (
@@ -15,11 +15,12 @@ function Btn({ active, onClick, children }: { active: boolean; onClick: () => vo
 }
 
 const SLICES: { id: DeployMode; label: string; help: string }[] = [
-  { id: 'full', label: 'Full stack', help: 'All 5 substrates: migrations → edge-functions → cf-worker → admin UI → bank-bot fleet (gate-gated).' },
+  { id: 'full', label: 'Full stack', help: 'All 6 substrates: migrations → edge-functions → cf-worker → admin UI → bank-bot fleet → mock portal (gate-gated).' },
   { id: 'ui', label: 'UI only', help: '--ui-only: just the Vercel admin portal. Skips the deployed-shape gate (ships no data-shape change).' },
   { id: 'migrations', label: 'Migrations', help: '--migrations-only: apply pending Supabase migrations only.' },
   { id: 'ef', label: 'Edge fns', help: '--ef-only: force redeploy-all of the edge functions.' },
   { id: 'bankbot', label: 'Bank-bot', help: '--bankbot-only: force-roll the bank-bot fleet only.' },
+  { id: 'portal', label: 'Mock portal', help: '--portal-only: self-heal the mock bank portals (SCB+KTB) to serve latest main. Syncs the bank-bot checkout, skips the deployed-shape gate (#938).' },
 ];
 
 export function DeployPanel({ onClose }: { onClose: () => void }) {
@@ -47,12 +48,6 @@ export function DeployPanel({ onClose }: { onClose: () => void }) {
     () => startDeploy(mode, dry, pull, allowDirty, skipGate),
     dry ? undefined
       : `LIVE ${sliceLabel} deploy to STAGING${pull ? ' (pulls main first)' : ''}${allowDirty ? ' — ALLOW-DIRTY (ships uncommitted code!)' : ''}. This mutates staging. Continue?`,
-  );
-  // Mock bank portals (bank-bot repo) — separate from the gateway deploy. Honours
-  // the Dry-run toggle (--dry-run shows the per-host delta; --deploy ships).
-  const mockPortal = () => fire(
-    () => deployMockPortal(dry, 'all'),
-    dry ? undefined : 'Deploy the mock bank portals (SCB + KTB) to serve latest main? This restarts the portal services. Continue?',
   );
 
   return (
@@ -98,12 +93,6 @@ export function DeployPanel({ onClose }: { onClose: () => void }) {
             style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }}
             title="fetch + land on latest origin/main for gateway + admin-portal + bank-bot">
             ⤓ Fetch &amp; pull main (all 3 repos)
-          </button>
-          <button onClick={mockPortal} disabled={running}
-            className="px-3 py-1.5 rounded-lg text-[12px] disabled:opacity-40"
-            style={{ background: '#fb923c22', color: '#fdba74', border: '1px solid #fb923c55' }}
-            title="deploy-mock-portal.sh — ship sim/mock-portal to SCB + KTB hosts (honours Dry-run). Separate from the staging deploy.">
-            🏦 {dry ? 'Mock portal (dry)' : 'Deploy mock portal'}
           </button>
           {!running
             ? <button onClick={deploy} className="ml-auto px-3 py-1.5 rounded-lg text-[12px]"

@@ -38,13 +38,14 @@ function runEnv(): Record<string, string> {
   return { ...process.env, PATH: path } as Record<string, string>;
 }
 
-export type DeployMode = 'full' | 'ui' | 'migrations' | 'ef' | 'bankbot';
-// slice → the deploy-staging.sh substrate flag (full = all 5, no flag)
+export type DeployMode = 'full' | 'ui' | 'migrations' | 'ef' | 'bankbot' | 'portal';
+// slice → the deploy-staging.sh substrate flag (full = all 6, no flag).
+// portal (#938): mock-portal is now a deploy-staging substrate (f).
 const MODE_FLAG: Record<Exclude<DeployMode, 'full'>, string> = {
-  ui: '--ui-only', migrations: '--migrations-only', ef: '--ef-only', bankbot: '--bankbot-only',
+  ui: '--ui-only', migrations: '--migrations-only', ef: '--ef-only', bankbot: '--bankbot-only', portal: '--portal-only',
 };
 const MODE_LABEL: Record<DeployMode, string> = {
-  full: 'full', ui: 'UI-only', migrations: 'migrations-only', ef: 'edge-fns-only', bankbot: 'bankbot-only',
+  full: 'full', ui: 'UI-only', migrations: 'migrations-only', ef: 'edge-fns-only', bankbot: 'bankbot-only', portal: 'portal-only',
 };
 export interface DeployState {
   status: 'idle' | 'running' | 'done';
@@ -136,20 +137,6 @@ export function startPullMain(): { ok: true } | { error: string } {
   if (!repos.length) return { error: 'no primary checkouts found for gateway / admin-portal / bank-bot' };
   const display = `git fetch + land on origin/main × ${repos.length} repos`;
   return begin('pull main (all repos)', display, 'bash', ['-c', repos.map(updateMainSnippet).join('; ')], c.gatewayRepo);
-}
-
-/** Deploy the mock bank portals via the bank-bot repo's deploy-mock-portal.sh.
- *  Separate from the gateway's deploy-staging.sh — different repo, different host
- *  flow (SCB local rsync+systemctl, KTB over SSM). Default target = all. */
-export function startMockPortal(opts: { dry?: boolean; target?: string }): { ok: true } | { error: string } {
-  const c = cfg();
-  const script = join(c.bankbotRepo, 'scripts/deploy-mock-portal.sh');
-  if (!existsSync(script)) return { error: `mock-portal script not found: ${script} (pull main on bank-bot?)` };
-  const target = (opts.target || 'all').trim();
-  if (!/^(scb|ktb|all)$/.test(target)) return { error: `bad target '${target}' (scb|ktb|all)` };
-  const mode = opts.dry ? '--dry-run' : '--deploy';
-  const label = `mock-portal ${opts.dry ? 'dry-run' : 'deploy'} (${target})`;
-  return begin(label, `deploy-mock-portal.sh ${mode} ${target}`, 'bash', ['-c', `bash "${script}" ${mode} ${target}`], c.bankbotRepo);
 }
 
 export function cancelDeploy(): { ok: boolean } {
