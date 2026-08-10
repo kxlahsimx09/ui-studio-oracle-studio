@@ -14,13 +14,25 @@ import { SHEET_URL, SHEET_W, SHEET_H, SPRITE, bgPos } from '../../lib/sprite';
 import { buildProps } from '../../lib/town-props';
 import { loadZoneTextures, saveZoneTextures, textureById } from '../../lib/textures';
 import { TexturePicker } from './TexturePicker';
+import { AgentLinks } from './AgentLinks';
+import type { PendingLink } from './AgentLinks';
+import { saveLink, deleteLink, hitTestAgent } from '../../lib/agent-links';
+import type { AgentLink } from '../../lib/agent-links';
+import { AgentNoteEditor } from './AgentNoteEditor';
+import type { NotePending } from './AgentNoteEditor';
+import { saveNote, deleteNote } from '../../lib/agent-notes';
+import { subscribeSpeaking, pauseSpeech, resumeSpeech, stopSpeech, type SpeakingState } from '../../lib/speech';
 
 interface Actor {
   id: string; x: number; y: number; tx: number; ty: number;
   dir: number; frame: number; frameT: number; waitT: number;
   status: string; charIndex: number; home: { x: number; y: number; w: number; h: number };
   pinned?: boolean; // dragged to a fixed spot — stops wandering / re-clamping
+  paneId?: string;  // stable tmux pane id — to match links/notes
+  idleSince?: number; // ms when it last stopped working (for the linked-stall aura)
+  bg?: boolean;     // working only because of a background shell → parked, doesn't pace
 }
+const IDLE_AURA_MS = 60_000; // linked agent idle this long → stall aura
 
 const rnd = (a: number, b: number) => a + Math.random() * (b - a);
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
@@ -29,12 +41,15 @@ const DRAG_PAUSE_MS = 2000; // after a drop, the sprite stands here this long, t
 function pickTarget(a: Actor) {
   a.tx = rnd(a.home.x, a.home.x + Math.max(1, a.home.w - SPRITE));
   a.ty = rnd(a.home.y, a.home.y + Math.max(1, a.home.h - SPRITE));
-  a.waitT = rnd(300, 1600); // pause on arrival
+  a.waitT = rnd(2200, 6500); // rest a good while on arrival → calm amble, not non-stop pacing
 }
 
 export function PixelTown(
-  { state, onSelect, lock, onLockClick }:
-  { state: FleetState; onSelect: (a: FleetAgent) => void; lock?: LockState | null; onLockClick?: () => void },
+  { state, onSelect, lock, onLockClick, links = [], reloadLinks, notes = {}, reloadNotes, stagingOutOfSync = false, deploying = false, deployFx = null, onOpenDeploy }:
+  { state: FleetState; onSelect: (a: FleetAgent) => void; lock?: LockState | null; onLockClick?: () => void;
+    links?: AgentLink[]; reloadLinks?: () => void;
+    notes?: Record<string, string>; reloadNotes?: () => void; stagingOutOfSync?: boolean; deploying?: boolean;
+    deployFx?: 'launch' | 'fall' | null; onOpenDeploy?: () => void },
 ) {
   const districts = useMemo(() => groupTown(state), [state]);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -47,6 +62,50 @@ export function PixelTown(
   const els = useRef<Map<string, HTMLDivElement>>(new Map());
   const stageRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: string; sx: number; sy: number; moved: boolean } | null>(null);
+  // Agent dependency arrows: the rAF moves each line + note pill to follow the two
+  // live sprites it connects, so the refs (not React) hold the per-frame positions.
+  const linkLineEls = useRef<Map<string, SVGLineElement>>(new Map());
+  const linkLabelEls = useRef<Map<string, HTMLDivElement>>(new Map());
+  const linksRef = useRef<AgentLink[]>(links);
+  // Panes at an ARROWHEAD (`to`) get the stall aura; panes at the TAIL (`from`)
+  // are the waiters — they're meant to be idle, so they get NO aura and their
+  // native waiting/working pulse is calmed (the link already says they're waiting).
+  const linkTargetPanesRef = useRef<Set<string>>(new Set());
+  const linkSourcePanesRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    linksRef.current = links;
+    linkTargetPanesRef.current = new Set(links.map((l) => l.toPane).filter(Boolean));
+    linkSourcePanesRef.current = new Set(links.map((l) => l.fromPane).filter(Boolean));
+  }, [links]);
+  // Live agents, for the rAF: links resolve their endpoints by the STABLE tmux pane
+  // id (%NN, never reused), not the positional `id` (session:window.pane) — that
+  // slot gets reused when an agent disappears, which made arrows jump to whoever
+  // moved into the freed id.
+  const agentsRef = useRef(state.agents);
+  useEffect(() => { agentsRef.current = state.agents; }, [state.agents]);
+  const [pending, setPending] = useState<PendingLink | null>(null);
+  const [notePending, setNotePending] = useState<NotePending | null>(null);
+  // Read-aloud: which agent (by pane id) is currently speaking, so a 🔊 floats over
+  // its head with a pause/stop control. Only one agent speaks at a time.
+  const [speaking, setSpeaking] = useState<SpeakingState | null>(null);
+  const [speakerMenu, setSpeakerMenu] = useState(false);
+  useEffect(() => subscribeSpeaking(setSpeaking), []);
+  useEffect(() => { if (!speaking) setSpeakerMenu(false); }, [speaking]);
+  const labelFor = (a: FleetAgent) => {
+    const title = costumeFor(a.role).title;
+    return a.label && a.label !== 'oracle' ? `${title}·${a.label}` : title;
+  };
+  // Display label for an agent id (costume title · slug) — used in the link editor.
+  const nameOf = (id: string) => {
+    const a = state.agents.find((x) => x.id === id);
+    return a ? labelFor(a) : id;
+  };
+  // Same, but matched on the stable pane id (for editing a saved link whose
+  // positional id may have changed since it was drawn).
+  const nameOfPane = (pane: string, fallback: string) => {
+    const a = state.agents.find((x) => x.paneId === pane);
+    return a ? labelFor(a) : fallback;
+  };
   // Animated decorations (campfire/windmill/sparkle): the rAF cycles their frames.
   const propEls = useRef<Map<string, HTMLDivElement>>(new Map());
   const animState = useRef<Map<string, { frame: number; t: number }>>(new Map());
@@ -90,6 +149,19 @@ export function PixelTown(
     try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
     if (!d || d.id !== a.id) return;
     if (!d.moved) { onSelect(a); return; } // a press without movement = click → open chat
+    // Dropped ONTO another sprite → record "A waits on B" and open the note editor.
+    const st = stageRef.current;
+    if (st) {
+      const r = st.getBoundingClientRect();
+      const px = e.clientX - r.left, py = e.clientY - r.top;
+      const boxes = [...actors.current.values()].map((ac) => ({ id: ac.id, x: ac.x, y: ac.y, size: SPRITE }));
+      const targetId = hitTestAgent(boxes, px, py, a.id);
+      const target = targetId ? state.agents.find((x) => x.id === targetId) : null;
+      if (target) setPending({
+        from: a.id, to: target.id, fromPane: a.paneId, toPane: target.paneId,
+        fromLabel: nameOf(a.id), toLabel: nameOf(target.id), note: '',
+      });
+    }
     // Dropped after a drag: don't freeze it — pause where it landed, then wander on.
     const act = actors.current.get(a.id);
     if (act) { act.pinned = false; act.waitT = DRAG_PAUSE_MS; act.frame = 0; }
@@ -117,14 +189,14 @@ export function PixelTown(
       const home = place.home;
       let act = actors.current.get(a.id);
       if (!act) {
-        act = { id: a.id, x: rnd(home.x, home.x + home.w - SPRITE), y: rnd(home.y, home.y + home.h - SPRITE), tx: 0, ty: 0, dir: 0, frame: 0, frameT: 0, waitT: rnd(0, 800), status: a.status, charIndex: charIndexFor(a.role), home };
+        act = { id: a.id, x: rnd(home.x, home.x + home.w - SPRITE), y: rnd(home.y, home.y + home.h - SPRITE), tx: 0, ty: 0, dir: 0, frame: 0, frameT: 0, waitT: rnd(0, 1200), status: a.status, charIndex: charIndexFor(a.role), home, paneId: a.paneId, bg: a.bg };
         pickTarget(act);
         actors.current.set(a.id, act);
       } else {
         // Zones rebuild every poll; only re-target when the rect VALUE changed,
         // else a stale target may sit outside the new home and pin the sprite to a wall.
         const moved = act.home.x !== home.x || act.home.y !== home.y || act.home.w !== home.w || act.home.h !== home.h;
-        act.status = a.status; act.home = home; act.charIndex = charIndexFor(a.role);
+        act.status = a.status; act.home = home; act.charIndex = charIndexFor(a.role); act.paneId = a.paneId; act.bg = a.bg;
         if (!act.pinned) {
           act.x = clamp(act.x, home.x, home.x + Math.max(0, home.w - SPRITE));
           act.y = clamp(act.y, home.y, home.y + Math.max(0, home.h - SPRITE));
@@ -150,10 +222,32 @@ export function PixelTown(
     let raf = 0; let last = 0;
     const tick = (t: number) => {
       const dt = last ? Math.min(60, t - last) : 16; last = t;
+      const nowMs = Date.now();
+      // De-overlap STANDING sprites: a team dissolve / re-align can stack idle
+      // agents on one spot (only workers wander apart). Gently push same-zone
+      // neighbours apart until they're spaced out — no manual dragging. Workers
+      // re-place themselves below; dragged sprites are left alone.
+      const SEP = SPRITE * 0.85;
+      const standing = [...actors.current.values()].filter((a) => (a.status !== 'working' || a.bg) && !a.pinned);
+      for (let i = 0; i < standing.length; i++) {
+        const a = standing[i];
+        const maxX = a.home.x + Math.max(0, a.home.w - SPRITE), maxY = a.home.y + Math.max(0, a.home.h - SPRITE);
+        for (let j = i + 1; j < standing.length; j++) {
+          const b = standing[j];
+          if (a.home !== b.home) continue; // same zone only (shared rect ref per cluster)
+          let dx = a.x - b.x, dy = a.y - b.y, dist = Math.hypot(dx, dy);
+          if (dist >= SEP) continue;
+          if (dist < 0.01) { dx = (i % 2 ? 1 : -1); dy = (j % 2 ? 1 : -1); dist = Math.hypot(dx, dy); } // exactly stacked → deterministic split
+          const k = ((SEP - dist) / dist) * 0.18 * (dt / 16); // ≤ ~2.5px/frame → converges fast, no teleport
+          const mx = dx * k, my = dy * k;
+          a.x = clamp(a.x + mx, a.home.x, maxX); a.y = clamp(a.y + my, a.home.y, maxY);
+          b.x = clamp(b.x - mx, b.home.x, maxX); b.y = clamp(b.y - my, b.home.y, maxY);
+        }
+      }
       for (const act of actors.current.values()) {
         const el = els.current.get(act.id);
         if (!el) continue;
-        if (act.status === 'working' && !act.pinned) {
+        if (act.status === 'working' && !act.pinned && !act.bg) {
           if (act.waitT > 0) { act.waitT -= dt; act.frame = 0; }
           else {
             const dx = act.tx - act.x, dy = act.ty - act.y;
@@ -179,6 +273,44 @@ export function PixelTown(
           el.style.backgroundPosition = bgPos(act.charIndex, 0, 0);
         }
         el.style.transform = `translate(${act.x}px, ${act.y}px)`;
+        // Stall aura: a depended-on agent (an arrowHEAD target) that's stopped
+        // working for >1min pulses, so a stalled dependency stands out. The waiting
+        // source (tail) is excluded — it's meant to be idle.
+        if (act.status === 'working') act.idleSince = undefined;
+        else if (act.idleSince == null) act.idleSince = nowMs;
+        const stalled = act.idleSince != null && nowMs - act.idleSince > IDLE_AURA_MS
+          && act.paneId != null && linkTargetPanesRef.current.has(act.paneId);
+        el.classList.toggle('town-actor-aura', stalled);
+        // A link SOURCE (waiter) shouldn't blink — calm its glow/bubble pulse.
+        el.classList.toggle('town-actor-calm', act.paneId != null && linkSourcePanesRef.current.has(act.paneId));
+      }
+      // Dependency arrows: anchor each line + note pill to the two live sprite
+      // centres; the arrow head stops at B's edge so it isn't hidden by the sprite.
+      // Resolve a link endpoint to its live sprite by the STABLE pane id; if no
+      // agent currently holds that pane the endpoint is gone → hide (don't fall
+      // back to the positional id, or a reused id would retarget the arrow).
+      const resolve = (id: string, pane: string) => {
+        const ag = pane
+          ? agentsRef.current.find((a) => a.paneId === pane)
+          : agentsRef.current.find((a) => a.id === id);
+        return ag ? actors.current.get(ag.id) : undefined;
+      };
+      for (const lk of linksRef.current) {
+        const line = linkLineEls.current.get(lk.id);
+        const label = linkLabelEls.current.get(lk.id);
+        const fa = resolve(lk.from, lk.fromPane), fb = resolve(lk.to, lk.toPane);
+        if (!fa || !fb) { if (line) line.style.display = 'none'; if (label) label.style.display = 'none'; continue; }
+        const x1 = fa.x + SPRITE / 2, y1 = fa.y + SPRITE / 2;
+        const cx = fb.x + SPRITE / 2, cy = fb.y + SPRITE / 2;
+        const dx = cx - x1, dy = cy - y1, len = Math.hypot(dx, dy) || 1;
+        const back = Math.min(len - 1, SPRITE * 0.55);
+        const x2 = cx - (dx / len) * back, y2 = cy - (dy / len) * back;
+        if (line) {
+          line.style.display = '';
+          line.setAttribute('x1', String(x1)); line.setAttribute('y1', String(y1));
+          line.setAttribute('x2', String(x2)); line.setAttribute('y2', String(y2));
+        }
+        if (label) { label.style.display = ''; label.style.transform = `translate(${(x1 + x2) / 2}px, ${(y1 + y2) / 2}px)`; }
       }
       // Advance the animated decorations (frozen when reduced-motion is set).
       for (const a of animsRef.current) {
@@ -216,17 +348,62 @@ export function PixelTown(
     return p ? { x: p.home.x + p.home.w / 2, y: p.home.y + p.home.h / 2 } : null;
   };
 
+  // Link editor (note on the arrow): create on drop, or edit/delete an existing one.
+  const submitLink = async () => {
+    const p = pending; if (!p) return;
+    setPending(null);
+    try { await saveLink(p.from, p.to, p.note, p.fromPane, p.toPane); reloadLinks?.(); } catch { /* keep the map quiet */ }
+  };
+  const removeLinkNow = async () => {
+    const p = pending; if (!p?.editingId) return;
+    setPending(null);
+    try { await deleteLink(p.editingId); reloadLinks?.(); } catch { /* keep the map quiet */ }
+  };
+  const editLink = (l: AgentLink) =>
+    setPending({
+      from: l.from, to: l.to, fromPane: l.fromPane, toPane: l.toPane,
+      fromLabel: nameOfPane(l.fromPane, nameOf(l.from)), toLabel: nameOfPane(l.toPane, nameOf(l.to)),
+      note: l.note, editingId: l.id,
+    });
+
+  // Per-agent note: click the nametag → edit what the agent is doing (blank = delete).
+  const openNote = (a: FleetAgent) =>
+    setNotePending({ pane: a.paneId, label: labelFor(a), note: notes[a.paneId] || '' });
+  const saveNoteNow = async (text: string) => {
+    const p = notePending; if (!p) return;
+    setNotePending(null);
+    try { await saveNote(p.pane, text); reloadNotes?.(); } catch { /* keep the map quiet */ }
+  };
+  const removeNoteNow = async () => {
+    const p = notePending; if (!p) return;
+    setNotePending(null);
+    try { await deleteNote(p.pane); reloadNotes?.(); } catch { /* keep the map quiet */ }
+  };
+
   return (
     <div ref={wrapRef} className="w-full">
     <div ref={stageRef} className="town-stage" style={{ width: stage.width, height: stage.height }}>
       {/* Ambient scenery — pure decoration on the grass, behind every agent. */}
-      {props.decos.map((d) => (
-        <div key={d.id} className="town-deco" style={{
+      {props.decos.map((d) => {
+        const isLandmark = d.id === 'landmark';
+        // A finished-deploy effect (launch/fall) takes over the statue for a beat;
+        // otherwise the steady out-of-sync alarm + deploying shake apply.
+        const fxClass = !isLandmark ? ''
+          : deployFx === 'launch' ? ' town-deco-launch'
+          : deployFx === 'fall' ? ' town-deco-fall'
+          : `${stagingOutOfSync ? ' town-deco-alarm' : ''}${deploying ? ' town-deco-shake' : ''}`;
+        return (
+        <div key={d.id}
+          className={`town-deco${isLandmark ? ' town-deco-landmark' : ''}${fxClass}`}
+          onClick={isLandmark ? (e) => { e.stopPropagation(); onOpenDeploy?.(); } : undefined}
+          title={isLandmark ? `${deploying ? 'deploying… · ' : stagingOutOfSync ? 'staging OUT OF SYNC · ' : ''}click to open deploy` : undefined}
+          style={{
           width: d.spec.w, height: d.spec.h,
           backgroundImage: `url(${d.spec.url})`, backgroundSize: `${d.spec.w}px ${d.spec.h}px`,
           transform: `translate(${d.x}px, ${d.y}px)`,
         }} />
-      ))}
+        );
+      })}
       {props.anims.map((a) => {
         const k = a.spec.size / a.spec.fw;
         return (
@@ -250,6 +427,18 @@ export function PixelTown(
           return <line key={`${r.from}>${r.to}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#c084fc" strokeOpacity={0.5} strokeWidth={2} className="town-road" />;
         })}
       </svg>
+
+      <AgentLinks
+        links={links}
+        registerLine={(id, el) => { if (el) linkLineEls.current.set(id, el); else linkLineEls.current.delete(id); }}
+        registerLabel={(id, el) => { if (el) linkLabelEls.current.set(id, el); else linkLabelEls.current.delete(id); }}
+        onEdit={editLink}
+        pending={pending}
+        onNote={(note) => setPending((p) => (p ? { ...p, note } : p))}
+        onSubmit={submitLink}
+        onCancel={() => setPending(null)}
+        onDelete={removeLinkNow}
+      />
 
       {stage.headers.map((h) => (
         <div key={h.session} className="town-district-label" style={{ left: 8, top: h.y }}>
@@ -300,7 +489,10 @@ export function PixelTown(
           >
             {/* Each on its OWN row so a long 🔑account never hides ctx% (the bug was
                 pinned agents only). Tag is bottom-anchored above the sprite, grows up. */}
-            <span className="town-nametag" style={{ borderColor: cos.color }}>
+            <span className="town-nametag town-nametag-click" style={{ borderColor: cos.color }}
+              title="click to add / edit a note"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); openNote(a); }}>
               {a.isOrchestrator && <span className="town-nametag-crown">👑</span>}
               <span className="town-nametag-row1">
                 <b style={{ color: cos.color }}>{cos.title}</b>
@@ -308,14 +500,35 @@ export function PixelTown(
               </span>
               {a.ctxPct != null ? <span className="town-nametag-ctx" style={{ color: ctxColor(a.ctxPct) }}>{a.ctxPct}%</span> : null}
               {a.plan ? <span className="town-nametag-acct" title={`Claude account: ${a.plan}`}>🔑{a.plan}</span> : null}
+              {notes[a.paneId] ? <span className="town-nametag-note">📝 {notes[a.paneId]}</span> : null}
             </span>
             {a.waiting ? (
               <span className="town-bubble town-bubble-wait" title="waiting for your input — click to answer the menu">🔔</span>
+            ) : a.bg ? (
+              <span className="town-bubble town-bubble-work" title={`background shell running — ${a.task || 'working'}`}>⚙️</span>
             ) : a.status === 'working' ? (
               <span className="town-bubble town-bubble-work" title={a.task || ''}>{activityEmoji(a.task)}</span>
             ) : a.status === 'idle' ? (
               <span className="town-bubble town-bubble-idle">💤</span>
             ) : null}
+            {/* Read-aloud: a big speaker floats over the talking agent's head so you
+                know whose words you're hearing. Click → pause / resume / stop. */}
+            {a.paneId && speaking?.paneId === a.paneId && (
+              <span className={`town-speaker${speaking.paused ? ' town-speaker-paused' : ''}`}
+                title={`${speaking.label} is speaking — click to pause / stop`}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); setSpeakerMenu((v) => !v); }}>
+                {speaking.paused ? '🔈' : '🔊'}
+                {speakerMenu && (
+                  <span className="town-speaker-menu" onPointerDown={(e) => e.stopPropagation()}>
+                    <button onClick={(e) => { e.stopPropagation(); speaking.paused ? resumeSpeech() : pauseSpeech(); }}>
+                      {speaking.paused ? '▶ resume' : '⏸ pause'}
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); stopSpeech(); setSpeakerMenu(false); }}>■ stop</button>
+                  </span>
+                )}
+              </span>
+            )}
           </div>
         );
       })}
@@ -340,6 +553,9 @@ export function PixelTown(
         }}
         onClose={() => setPicking(null)}
       />
+    )}
+    {notePending && (
+      <AgentNoteEditor pending={notePending} onSave={saveNoteNow} onRemove={removeNoteNow} onCancel={() => setNotePending(null)} />
     )}
     </div>
   );

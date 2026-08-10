@@ -1,12 +1,46 @@
-// Live-tester run panel (scoped to next-live-tester's sprite). Pick a suite,
-// tick its options, Run → the server acquires the staging lock AS next-live-tester
-// and launches the suite's run-live-*.sh, streaming output back. Results are
-// "ran + per-leg colour", never PASS/FAIL (§ADR-21 — investigator owns the verdict).
+// Live-tester run panel — driven by the v2 journey CATALOG (read from the opened
+// agent's repo). Pick a card, Run → the server acquires the staging lock AS the
+// agent and runs the card's exec.command in that agent's poc/integration, streaming
+// output. Results are "ran + per-leg colour", never PASS/FAIL (§ADR-21).
 import { useEffect, useRef, useState } from 'react';
-import { useLiveTest, runSuite, cancelRun, type Control, type LegInfo } from '../../lib/livetest';
+import { useLiveTest, runSuite, cancelRun, pullMainRepo, type Suite, type ProgItem } from '../../lib/livetest';
 import { useLock } from '../../lib/lock';
+import type { FleetAgent } from '../../lib/fleet';
+import { LiveTestSchedule } from './LiveTestSchedule';
+import { LiveTestHistory } from './LiveTestHistory';
 
 const COLOUR: Record<string, string> = { GREEN: '#4ade80', AMBER: '#fbbf24', RED: '#f87171', SKIPPED: '#64748b' };
+const PROG_DOT: Record<string, string> = { green: '#4ade80', amber: '#fbbf24', red: '#f87171' };
+
+// Real-time per-card board for a "run the whole catalog" run.
+function ProgressBoard({ items }: { items: ProgItem[] }) {
+  const done = items.filter((p) => p.status === 'done');
+  const counts = { green: done.filter((p) => p.color === 'green').length, amber: done.filter((p) => p.color === 'amber').length, red: done.filter((p) => p.color === 'red').length };
+  return (
+    <div className="rounded-lg border border-white/10 p-2 mb-2">
+      <div className="flex items-center gap-2 text-[10px] text-white/50 mb-1.5">
+        <b className="text-white/80">progress</b> {done.length}/{items.length}
+        <span className="ml-auto flex items-center gap-2">
+          <span style={{ color: '#4ade80' }}>● {counts.green}</span>
+          <span style={{ color: '#fbbf24' }}>● {counts.amber}</span>
+          <span style={{ color: '#f87171' }}>● {counts.red}</span>
+        </span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1">
+        {items.map((p) => {
+          const dot = p.status === 'pending' ? '#3f4654' : p.status === 'running' ? '#7dd3fc' : (PROG_DOT[p.color || ''] || '#64748b');
+          return (
+            <div key={p.id} className="flex items-center gap-1.5 text-[10px] min-w-0" title={p.summary || p.status}>
+              <span className={`w-2 h-2 rounded-full shrink-0${p.status === 'running' ? ' animate-pulse' : ''}`} style={{ background: dot, boxShadow: p.status !== 'pending' ? `0 0 5px ${dot}` : undefined }} />
+              <span className="font-mono text-white/80 shrink-0">{p.id}</span>
+              <span className="text-white/40 truncate">{p.status === 'running' ? 'running…' : p.status === 'pending' ? 'queued' : (p.summary || `rc ${p.rc}`)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function Legs({ legs }: { legs: unknown }) {
   if (Array.isArray(legs)) {
@@ -24,151 +58,152 @@ function Legs({ legs }: { legs: unknown }) {
   return <pre className="text-[10px] text-white/50 mt-1 max-h-24 overflow-auto">{JSON.stringify(legs, null, 1)}</pre>;
 }
 
-function InfoRow({ k, v, c }: { k: string; v: string; c?: string }) {
-  if (!v) return null;
+const speedStyle = (s: string) => s === 'FAST'
+  ? { background: '#4ade8022', color: '#86efac', border: '1px solid #4ade8055' }
+  : s === 'SLOW' ? { background: '#fbbf2422', color: '#fcd34d', border: '1px solid #fbbf2455' }
+  : { background: '#ffffff10', color: '#94a3b8', border: '1px solid #ffffff22' };
+
+function CardButton({ s, active, onClick }: { s: Suite; active: boolean; onClick: () => void }) {
+  const green = (s.result || '').toUpperCase().startsWith('GREEN');
   return (
-    <div className="grid grid-cols-[64px_1fr] gap-2 text-[11px] mb-0.5">
-      <span className="text-white/40 shrink-0">{k}</span><span style={{ color: c || 'rgba(255,255,255,0.82)' }}>{v}</span>
-    </div>
+    <button onClick={onClick} disabled={!s.runnable && !active}
+      className="px-2 py-1 rounded text-[11px] inline-flex items-center gap-1 disabled:opacity-45"
+      style={active ? { background: '#c084fc22', color: '#d9bbff', border: '1px solid #c084fc66' }
+        : { background: '#ffffff08', color: s.runnable ? '#cbd5e1' : '#7384a0', border: '1px solid #ffffff14' }}
+      title={s.runnable ? s.title : `not runnable — ${s.reason}`}>
+      <span className="font-mono">{s.id}</span>
+      {green && <span style={{ color: '#4ade80' }}>✓</span>}
+      {s.ownerGated && <span title="moves real money/bot">⚠</span>}
+      {!s.runnable && <span style={{ color: '#64748b' }}>·plan</span>}
+    </button>
   );
 }
 
-// Fullscreen ⓘ card (fixed so the panel's overflow-auto can't clip it). Lists each
-// leg the control covers as What / Why / How / Verify.
-function InfoCard({ label, info, onClose }: { label: string; info: LegInfo[]; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onClick={onClose}>
-      <div className="w-[min(560px,94vw)] max-h-[86vh] overflow-auto rounded-xl border border-white/15 bg-[#0c0c12] p-4 text-left" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[13px] font-semibold text-white/90">ⓘ {label}</span>
-          <button onClick={onClose} className="text-white/50 hover:text-white/90 text-sm">✕</button>
-        </div>
-        {info.map((lg) => (
-          <div key={lg.id} className="mb-2.5 rounded-lg border border-white/10 p-2.5">
-            <div className="flex items-baseline gap-2 mb-1">
-              <span className="text-[11px] font-mono text-sky-300">{lg.id}</span>
-              {lg.ac && <span className="text-[9px] px-1 py-0.5 rounded bg-white/10 text-white/50 font-mono">{lg.ac}</span>}
-            </div>
-            {lg.title && <div className="text-[12px] font-medium text-white/90 mb-1">{lg.title}</div>}
-            <InfoRow k="เทสอะไร" v={lg.what} /><InfoRow k="ทำไม" v={lg.why} />
-            <InfoRow k="อย่างไร" v={lg.how} /><InfoRow k="ผ่านเมื่อ" v={lg.verify} c="#86efac" />
-          </div>
-        ))}
-        <p className="text-[10px] text-white/40 mt-1">“ผ่านเมื่อ” = เงื่อนไขที่ leg ขึ้นสีเขียว · harness แค่รัน+บันทึก, คำตัดสินจริงคือ L3 raw-table ของ next-investigator (§ADR-21).</p>
-      </div>
-    </div>
-  );
-}
-
-function Field({ c, val, set }: { c: Control; val: unknown; set: (v: unknown) => void }) {
-  const [open, setOpen] = useState(false);
-  const danger = c.danger ? { color: '#fca5a5' } : {};
-  let ctrl;
-  if (c.type === 'toggle') ctrl = (
-    <label className="flex items-center gap-1.5 text-[11px] min-w-0" style={danger} title={c.help}>
-      <input type="checkbox" checked={val === true} onChange={(e) => set(e.target.checked)} /> <span className="truncate">{c.label}</span>
-    </label>
-  );
-  else if (c.type === 'select') ctrl = (
-    <label className="flex items-center gap-1.5 text-[11px] text-white/70 min-w-0" title={c.help}>
-      <span className="truncate">{c.label}</span> <select className="bg-white/10 rounded px-1 py-0.5" value={String(val ?? c.def ?? '')} onChange={(e) => set(e.target.value)}>
-        {c.options?.map((o) => <option key={o} value={o}>{o}</option>)}
-      </select>
-    </label>
-  );
-  else ctrl = (
-    <label className="flex items-center gap-1.5 text-[11px] text-white/70 min-w-0" title={c.help}>
-      <span className="truncate">{c.label}</span> <input type={c.type === 'number' ? 'number' : 'text'} placeholder={c.def || ''} className="bg-white/10 rounded px-1 py-0.5 w-20"
-        value={String(val ?? '')} onChange={(e) => set(e.target.value)} />
-    </label>
-  );
-  return (
-    <div className="flex items-center gap-1">
-      {ctrl}
-      {!!c.info?.length && (
-        <button onClick={() => setOpen(true)} title="What / why / how this tests"
-          className="shrink-0 w-4 h-4 rounded-full border border-white/25 text-[9px] leading-[14px] text-white/55 hover:text-white hover:border-white/60">i</button>
-      )}
-      {open && !!c.info?.length && <InfoCard label={c.label} info={c.info} onClose={() => setOpen(false)} />}
-    </div>
-  );
-}
-
-export function LiveTestPanel({ onClose }: { onClose: () => void }) {
-  const { data } = useLiveTest(true);
+export function LiveTestPanel({ agent, onClose }: { agent?: FleetAgent; onClose: () => void }) {
+  const { data } = useLiveTest(true, agent?.paneId);
   const lock = useLock(3000);
-  const [suiteId, setSuiteId] = useState('B');
-  const [vals, setVals] = useState<Record<string, unknown>>({});
-  const [gvals, setGvals] = useState<Record<string, unknown>>({}); // global controls — persist across suite switches
+  const [suiteId, setSuiteId] = useState('D2'); // default to a FAST regression card
   const [campaign, setCampaign] = useState('livetest');
   const [msg, setMsg] = useState<string | null>(null);
+  const [pulling, setPulling] = useState(false);
+  const [showSched, setShowSched] = useState(false);
+  const [showHist, setShowHist] = useState(false);
   const logRef = useRef<HTMLPreElement>(null);
-  const suite = data?.suites.find((s) => s.id === suiteId);
+
+  const suites = data?.suites ?? [];
+  const suite = suites.find((s) => s.id === suiteId);
   const run = data?.run;
   const running = run?.status === 'running';
   const heldByOther = !!lock?.locked && lock.holder?.agent !== 'next-live-tester';
+  const batch = suites.filter((s) => s.batch);
+  const fast = suites.filter((s) => s.runnable && !s.batch && s.speed === 'FAST');
+  const slow = suites.filter((s) => s.runnable && !s.batch && s.speed !== 'FAST');
+  const planned = suites.filter((s) => !s.runnable && !s.batch);
 
-  useEffect(() => { setVals({}); setMsg(null); }, [suiteId]);
+  const pick = (id: string) => { setSuiteId(id); setMsg(null); };
   useEffect(() => { if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [run?.log]);
 
   const launch = async () => {
-    if (gvals.LIVE_DEDICATED_STACK && !window.confirm('LIVE_DEDICATED_STACK wipes ALL staging transactions at start. Continue?')) return;
+    if (!suite?.runnable) { setMsg(`${suiteId} is not runnable: ${suite?.reason || '—'}`); return; }
+    if (suite.ownerGated && !window.confirm(`Run ${suite.id} · ${suite.title}?\nThis drives the REAL bank-bot and moves SIM money on staging (owner-gate ${suite.ownerGoEnv}). Continue?`)) return;
     setMsg(null);
-    const r = await runSuite(suiteId, { ...gvals, ...vals }, campaign || 'livetest');
+    const r = await runSuite(suiteId, {}, campaign || 'livetest', agent?.paneId);
     if (r.held) { const h = r.held as { holder?: { agent?: string } }; setMsg(`staging is HELD by ${h.holder?.agent || 'another agent'} — use the 🔒 panel to seize, or wait.`); }
     else if (r.error) setMsg(r.error);
+  };
+  const pullMain = async () => {
+    if (pulling) return;
+    setPulling(true); setMsg(null);
+    const r = await pullMainRepo(agent?.paneId);
+    setMsg(r.error ? `pull main: ${r.error.slice(0, 300)}` : `✓ pulled main\n${r.output || ''}`);
+    setPulling(false);
   };
 
   return (
     <div className="fixed inset-0 z-[56] flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
-      <div className="w-[min(640px,96vw)] max-h-[92vh] overflow-auto rounded-xl border border-white/15 bg-[#0c0c12] p-4" onClick={(e) => e.stopPropagation()}>
+      <div className="w-[min(680px,96vw)] max-h-[92vh] overflow-auto rounded-xl border border-white/15 bg-[#0c0c12] p-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-1">
-          <span className="font-semibold text-[14px] text-white/90">🧪 Live-tester run</span>
+          <span className="font-semibold text-[14px] text-white/90">🧪 Live-tester · v2 journey</span>
           <button onClick={onClose} className="text-white/50 hover:text-white/90 text-sm">✕</button>
         </div>
-        <p className="text-[11px] text-white/40 mb-2">Runs a suite on staging AS <code className="text-sky-300">next-live-tester</code> (auto-locks the env). Records evidence + per-leg colour — <b>not</b> a PASS/FAIL (§ADR-21).</p>
+        <p className="text-[11px] text-white/40 mb-2">
+          Runs a v2 catalog card on staging AS <code className="text-sky-300">next-live-tester</code> (auto-locks). Records evidence + per-leg colour — <b>not</b> a PASS/FAIL (§ADR-21).
+          {data?.summary?.total_cards != null && <> · {data.summary.runnable}/{data.summary.total_cards} runnable</>}
+        </p>
+
+        {/* runs in THIS agent's repo + pull latest main */}
+        <div className="flex items-center gap-2 mb-2 text-[10px]">
+          <span className="text-white/40">runs on:</span>
+          <code className="text-sky-300">{agent?.worktree ? `wt ${agent.worktree}` : 'primary checkout'}</code>
+          <span className="flex-1" />
+          <button onClick={pullMain} disabled={pulling}
+            className="px-2 py-1 rounded text-[10px] disabled:opacity-40"
+            style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }}
+            title="git fetch + ff-merge latest origin/main into this agent's repo (refreshes the catalog + scripts)">
+            {pulling ? '⤓ pulling…' : '⤓ pull main'}
+          </button>
+        </div>
+
+        {/* nightly scheduler + run history */}
+        <div className="flex items-center gap-1.5 mb-2">
+          <button onClick={() => setShowSched((v) => !v)} className="px-2 py-1 rounded text-[10px]"
+            style={showSched ? { background: '#38bdf822', color: '#7dd3fc', border: '1px solid #38bdf866' } : { background: '#ffffff08', color: '#aaa', border: '1px solid #ffffff14' }}
+            title="schedule a nightly auto-run (Full or a card selection)">🌙 Schedule</button>
+          <button onClick={() => setShowHist((v) => !v)} className="px-2 py-1 rounded text-[10px]"
+            style={showHist ? { background: '#38bdf822', color: '#7dd3fc', border: '1px solid #38bdf866' } : { background: '#ffffff08', color: '#aaa', border: '1px solid #ffffff14' }}
+            title="past run results with timestamps">🕘 History</button>
+        </div>
+        {showSched && <LiveTestSchedule suites={suites} paneId={agent?.paneId} />}
+        {showHist && <LiveTestHistory />}
 
         {heldByOther && <div className="mb-2 rounded-lg border border-red-500/30 bg-red-500/5 px-2.5 py-1.5 text-[11px] text-red-300">🔒 staging held by <b>{lock?.holder?.agent}</b>{lock?.holder?.campaign ? ` (${lock.holder.campaign})` : ''} — Run disabled. Seize/wait via the 🔒 panel.</div>}
-        {lock?.disabled && <div className="mb-2 text-[11px] text-amber-300/80">lock disabled — runs won't serialize.</div>}
+        {!suites.length && <div className="mb-2 text-[11px] text-amber-300/80">no catalog found in this agent's repo — try ⤓ pull main.</div>}
 
-        {/* suite picker */}
-        <div className="flex flex-wrap gap-1.5 mb-2">
-          {data?.suites.map((s) => (
-            <button key={s.id} onClick={() => setSuiteId(s.id)} className="px-2 py-1 rounded text-[11px]"
-              style={suiteId === s.id ? { background: '#c084fc22', color: '#d9bbff', border: '1px solid #c084fc66' } : { background: '#ffffff08', color: '#aaa', border: '1px solid #ffffff14' }}>
-              {s.label}{s.ownerGated ? ' ⚠' : ''}
-            </button>
-          ))}
-        </div>
-        {suite && <p className="text-[10px] text-white/45 mb-2"><code className="text-white/70">{suite.launcher}</code> · ~{suite.runtime} · {suite.gate}{suite.ownerGated ? ' · ⚠ moves SIM money' : ''}</p>}
+        {/* card picker — grouped */}
+        {!!batch.length && <div className="mb-2"><div className="text-[10px] text-white/40 mb-1">▶ run the whole catalog (serial)</div>
+          <div className="flex flex-wrap gap-1.5">{batch.map((s) => <CardButton key={s.id} s={s} active={suiteId === s.id} onClick={() => pick(s.id)} />)}</div></div>}
+        {!!fast.length && <div className="mb-2"><div className="text-[10px] text-white/40 mb-1">FAST · regression roster</div>
+          <div className="flex flex-wrap gap-1.5">{fast.map((s) => <CardButton key={s.id} s={s} active={suiteId === s.id} onClick={() => pick(s.id)} />)}</div></div>}
+        {!!slow.length && <div className="mb-2"><div className="text-[10px] text-white/40 mb-1">SLOW · real bot / callbacks</div>
+          <div className="flex flex-wrap gap-1.5">{slow.map((s) => <CardButton key={s.id} s={s} active={suiteId === s.id} onClick={() => pick(s.id)} />)}</div></div>}
+        {!!planned.length && <div className="mb-2"><div className="text-[10px] text-white/40 mb-1">not runnable (planned)</div>
+          <div className="flex flex-wrap gap-1.5">{planned.map((s) => <CardButton key={s.id} s={s} active={suiteId === s.id} onClick={() => pick(s.id)} />)}</div></div>}
 
-        {/* global controls — apply to every suite, persist across switches */}
-        {!!data?.globals?.length && (
-          <div className="flex flex-wrap gap-x-4 gap-y-1 mb-2 rounded-lg border border-amber-400/20 bg-amber-400/5 px-2.5 py-1.5">
-            <span className="text-[10px] text-white/40 w-full">Global (all suites)</span>
-            {data.globals.map((c) => <Field key={c.env} c={c} val={gvals[c.env]} set={(v) => setGvals((m) => ({ ...m, [c.env]: v }))} />)}
+        {/* selected card detail */}
+        {suite && (
+          <div className="rounded-lg border border-white/10 p-2.5 mb-3 text-[11px]">
+            <div className="flex items-center gap-2 mb-1">
+              <b className="text-white/90">{suite.id}</b><span className="text-white/70">{suite.title}</span>
+              <span className="px-1.5 py-0.5 rounded text-[9px]" style={speedStyle(suite.speed)}>{suite.speed}</span>
+              {suite.redFirst && <span className="px-1.5 py-0.5 rounded text-[9px]" style={{ background: '#fbbf2422', color: '#fcd34d', border: '1px solid #fbbf2455' }} title="RED is EXPECTED here (RED-first → GREEN once the fix deploys) — a RED result is not a failure">RED-FIRST</span>}
+              {suite.epic && <span className="text-[9px] text-white/40">{suite.epic}</span>}
+              {suite.result && <span className="ml-auto text-[10px]" style={{ color: (suite.result || '').toUpperCase().startsWith('GREEN') ? '#86efac' : '#fcd34d' }}>{suite.result}</span>}
+            </div>
+            {suite.runnable
+              ? <code className="text-[10px] text-sky-300/90 break-all">{suite.command}</code>
+              : <div className="text-amber-300/80">⚠ not runnable — {suite.reason}</div>}
+            {suite.cast && <div className="text-[10px] text-white/40 mt-1">cast: {suite.cast}</div>}
+            {suite.ownerGated && <div className="text-[10px] text-amber-300/80 mt-1">⚠ owner-gated ({suite.ownerGoEnv}) — drives the real bot / moves SIM money</div>}
           </div>
         )}
-
-        {/* per-suite options */}
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mb-3 rounded-lg border border-white/10 p-2.5">
-          {suite?.controls.map((c) => <Field key={c.env} c={c} val={vals[c.env]} set={(v) => setVals((m) => ({ ...m, [c.env]: v }))} />)}
-        </div>
 
         <div className="flex items-center gap-2 mb-2">
           <label className="text-[11px] text-white/60">campaign <input className="bg-white/10 rounded px-1 py-0.5 w-28" value={campaign} onChange={(e) => setCampaign(e.target.value)} /></label>
           {!running
-            ? <button disabled={heldByOther} onClick={launch} className="ml-auto px-3 py-1.5 rounded-lg text-[12px] disabled:opacity-40" style={{ background: '#4ade8022', color: '#4ade80', border: '1px solid #4ade8055' }}>▶ Run suite {suiteId}</button>
+            ? <button disabled={heldByOther || !suite?.runnable} onClick={launch} className="ml-auto px-3 py-1.5 rounded-lg text-[12px] disabled:opacity-40" style={{ background: '#4ade8022', color: '#4ade80', border: '1px solid #4ade8055' }}>▶ Run {suiteId}</button>
             : <button onClick={cancelRun} className="ml-auto px-3 py-1.5 rounded-lg text-[12px]" style={{ background: '#f8717122', color: '#fca5a5', border: '1px solid #f8717155' }}>■ Cancel run</button>}
         </div>
-        {msg && <p className="text-[11px] text-amber-300 mb-2">{msg}</p>}
+        {msg && <pre className="text-[11px] text-amber-300 mb-2 whitespace-pre-wrap break-words font-sans">{msg}</pre>}
+
+        {/* real-time per-card board (catalog runs) */}
+        {run?.progress && run.progress.length > 0 && <ProgressBoard items={run.progress} />}
 
         {/* run output */}
         {run && run.status !== 'idle' && (
           <div className="rounded-lg border border-white/10 p-2">
             <div className="flex items-center gap-2 text-[11px] mb-1">
               <span className="font-mono" style={{ color: running ? '#fbbf24' : run.exitCode === 0 ? '#4ade80' : '#f87171' }}>● {run.status}{run.exitCode != null ? ` (exit ${run.exitCode})` : ''}</span>
-              <span className="text-white/40">suite {run.suite}</span>
+              <span className="text-white/40">card {run.suite}</span>
               {run.evidenceDir && <span className="text-white/35 ml-auto truncate" title={run.evidenceDir}>evidence: …/{run.evidenceDir.split('/').slice(-2).join('/')}</span>}
             </div>
             {run.legs != null && <Legs legs={run.legs} />}

@@ -59,12 +59,26 @@ export function closePane(id: string): void {
 // (e.g. this feature's own code) flags itself (the brewbot 2026-06-17 self-watch FP).
 const MENU_RE = [/^[ \t]*❯[ \t]*\d+[.)]/m, /Enter to select[^\n]{0,40}(navigate|cancel)/i];
 
-/** True when the pane is parked on a menu waiting for our input. Cheap (visible screen). */
-export function paneNeedsInput(id: string): boolean {
-  if (!validPane(id)) return false;
+// Claude Code shows a BACKGROUND-SHELL indicator in its chrome when the agent has
+// kicked off a `run_in_background` bash that's still running — e.g. the status bar
+// "⏵⏵ … · 1 shell · … ↓ to manage" and the activity line "✻ … · 1 shell still
+// running". Such an agent SITS at the idle glyph (✳) but is NOT asleep — work is
+// happening in the background, so the town should show it as working.
+const BG_SHELL_RE = [/·\s*\d+\s+shells?\b/, /↓\s*to manage/, /\b\d+\s+shells?\s+still running\b/i];
+
+/** Capture the visible screen ONCE and read both idle-pane signals from its bottom
+ *  region: parked on a menu (needs input) and/or a background shell still running. */
+export function paneSignals(id: string): { needsInput: boolean; bgShell: boolean } {
+  if (!validPane(id)) return { needsInput: false, bgShell: false };
   try {
-    const t = execFileSync('tmux', ['capture-pane', '-p', '-t', id], { encoding: 'utf8', maxBuffer: 2_000_000 });
-    const bottom = t.split('\n').filter((l) => l.trim()).slice(-10).join('\n');
-    return MENU_RE.some((re) => re.test(bottom));
-  } catch { return false; }
+    const lines = execFileSync('tmux', ['capture-pane', '-p', '-t', id], { encoding: 'utf8', maxBuffer: 2_000_000 })
+      .split('\n').filter((l) => l.trim());
+    return {
+      needsInput: MENU_RE.some((re) => re.test(lines.slice(-10).join('\n'))),
+      bgShell: BG_SHELL_RE.some((re) => re.test(lines.slice(-12).join('\n'))),
+    };
+  } catch { return { needsInput: false, bgShell: false }; }
 }
+
+/** True when the pane is parked on a menu waiting for our input. */
+export function paneNeedsInput(id: string): boolean { return paneSignals(id).needsInput; }

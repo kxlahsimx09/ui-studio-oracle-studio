@@ -7,16 +7,22 @@ import { useFleet } from '../lib/fleet';
 import type { FleetAgent } from '../lib/fleet';
 import { useLock } from '../lib/lock';
 import type { LockState } from '../lib/lock';
+import { useAgentLinks } from '../lib/agent-links';
+import { useAgentNotes } from '../lib/agent-notes';
 import { groupTown } from '../lib/town-group';
 import { District } from '../components/town/District';
 import { PixelTown } from '../components/town/PixelTown';
 import { AgentChat } from '../components/town/AgentChat';
 import { NewAgent } from '../components/town/NewAgent';
 import { Notifications } from '../components/town/Notifications';
-import { StagingBand } from '../components/town/StagingBand';
 import { UsagePanel } from '../components/town/UsagePanel';
 import { LockPanel } from '../components/town/LockPanel';
 import { BookmarksPanel } from '../components/town/BookmarksPanel';
+import { DeployPanel } from '../components/town/DeployPanel';
+import { LiveTestPanel } from '../components/town/LiveTestPanel';
+import { SyncHud } from '../components/town/SyncHud';
+import { useVerify } from '../lib/verify';
+import { useDeploySignal } from '../lib/deploy';
 import './Town.css';
 
 type TownView = 'map' | 'list';
@@ -45,6 +51,14 @@ export function Town() {
   const [showUsage, setShowUsage] = useState(false);
   const [showLock, setShowLock] = useState(false);
   const [showBookmarks, setShowBookmarks] = useState(false);
+  const [showDeploy, setShowDeploy] = useState(false);
+  const [showTests, setShowTests] = useState(false);
+  const { deploying, fx: deployFx } = useDeploySignal();
+  const verify = useVerify();
+  // statue alarms on DEPLOY out-of-sync (currency), not a service being down.
+  const stagingOutOfSync = !!verify.state?.checks?.some((c) => c.group === 'sync' && (c.state === 'stale' || c.state === 'fail'));
+  const { links, reload: reloadLinks } = useAgentLinks(4000);
+  const { notes, reload: reloadNotes } = useAgentNotes(4000);
   const polledLock = useLock(4000);
   const [lock, setLock] = useState<LockState | null>(null);
   useEffect(() => { if (polledLock) setLock(polledLock); }, [polledLock]);
@@ -96,6 +110,20 @@ export function Town() {
             title="bookmarked agents — respawn a closed agent with its context"
           >🔖 bookmarks</button>
           <button
+            onClick={() => setShowTests(true)}
+            className="px-2.5 py-1 rounded-full text-[11px]"
+            style={{ background: '#4ade8022', color: '#86efac', border: '1px solid #4ade8055' }}
+            title="run live-test cards on staging from the MAIN repo (real-time per-card progress)"
+          >🧪 tests</button>
+          <button
+            onClick={() => setShowDeploy(true)}
+            className="px-2.5 py-1 rounded-full text-[11px]"
+            style={deploying
+              ? { background: '#f59e0b2a', color: '#fbbf24', border: '1px solid #f59e0b88' }
+              : { background: '#38bdf822', color: '#7dd3fc', border: '1px solid #38bdf855' }}
+            title="deploy staging from the primary checkouts (full / UI-only / dry-run) + pull main"
+          ><span className={`town-rocket${deploying ? ' town-rocket-fly' : ''}`}>🚀</span> {deploying ? 'deploying…' : 'deploy'}</button>
+          <button
             onClick={() => setShowLock(true)}
             className="px-2.5 py-1 rounded-full text-[11px]"
             style={lock?.disabled
@@ -128,7 +156,7 @@ export function Town() {
         </div>
       )}
 
-      {view === 'map' && <PixelTown state={state} onSelect={openAgent} lock={lock} onLockClick={() => setShowLock(true)} />}
+      {view === 'map' && <PixelTown state={state} onSelect={openAgent} lock={lock} onLockClick={() => setShowLock(true)} links={links} reloadLinks={reloadLinks} notes={notes} reloadNotes={reloadNotes} stagingOutOfSync={stagingOutOfSync} deploying={deploying} deployFx={deployFx} onOpenDeploy={() => setShowDeploy(true)} />}
 
       {view === 'list' && (
         <div className="flex flex-col gap-3">
@@ -140,6 +168,8 @@ export function Town() {
       {showNew && <NewAgent onClose={() => setShowNew(false)} />}
       {showUsage && <UsagePanel onClose={() => setShowUsage(false)} />}
       {showBookmarks && <BookmarksPanel onClose={() => setShowBookmarks(false)} />}
+      {showDeploy && <DeployPanel onClose={() => setShowDeploy(false)} />}
+      {showTests && <LiveTestPanel onClose={() => setShowTests(false)} />}
       {showLock && <LockPanel lock={lock} agents={state.agents} onChange={setLock} onClose={() => setShowLock(false)} />}
 
       {loading && !state.agents.length && (
@@ -149,7 +179,7 @@ export function Town() {
         <p className="text-center text-white/40 py-12">no agent panes found in tmux.</p>
       )}
 
-      <StagingBand />
+      <SyncHud state={verify.state} refresh={verify.refresh} />
     </div>
   );
 }

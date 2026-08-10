@@ -18,13 +18,23 @@ import { listRoles, spawnAgent } from './agents';
 import { switchAccount } from './account-switch';
 import { carryOver } from './carry-over';
 import { listBookmarks, addBookmark, removeBookmark, respawnBookmark } from './bookmarks';
+import { listLinks, addLink, removeLink } from './agent-links';
+import { getDeploy, startDeploy, startPullMain, cancelDeploy } from './deploy';
+import { listNotes, setNote, removeNote } from './agent-notes';
+import { getVerify, runVerify } from './verify';
+import { summarize } from './summarize';
+import { narrate } from './narrate';
+import { tts, TTS_VOICES } from './tts';
 import { listPlans } from './usage';
 import { handlePush, startNotifyLoop } from './push';
 import { handleTelegram } from './telegram';
 import { getEnvStatus, startEnvProbe } from './env-probe';
 import { getUsage } from './usage';
 import { getLockState, releaseLock, setDisabled } from './lock-state';
-import { getCatalog, getGlobals, getRun, startRun, cancelRun } from './livetest';
+import { getCatalog, getRun, startRun, startSequence, cancelRun } from './livetest';
+import { pullMainRepo } from './livetest-git';
+import { getSchedule, setSchedule, tickSchedule } from './livetest-schedule';
+import { getHistory } from './livetest-history';
 
 const DIST = join(import.meta.dir, '..', 'dist');
 const PORT = Number(process.env.FLEET_PORT || 8788);
@@ -111,16 +121,28 @@ const server = Bun.serve({
 
     // Live-tester run panel: GET = suite catalog + current run state; POST {suite,env}
     // launches a run (lock-aware); POST {action:cancel} kills the active run.
+    if (p === '/__fleet/livetest/schedule') {
+      if (req.method === 'POST') {
+        try { const b = (await req.json()) as Record<string, unknown>; return Response.json(setSchedule(b)); }
+        catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+      }
+      return Response.json(getSchedule(), { headers: { 'cache-control': 'no-store' } });
+    }
+    if (p === '/__fleet/livetest/history') {
+      return Response.json({ history: getHistory(Number(url.searchParams.get('limit')) || 50) }, { headers: { 'cache-control': 'no-store' } });
+    }
     if (p === '/__fleet/livetest') {
       if (req.method === 'POST') {
         try {
-          const b = (await req.json()) as { suite?: string; env?: Record<string, unknown>; campaign?: string; action?: string };
+          const b = (await req.json()) as { suite?: string; env?: Record<string, unknown>; campaign?: string; action?: string; paneId?: string; cards?: string[] };
           if (b.action === 'cancel') return Response.json(cancelRun());
-          const r = await startRun(b.suite || '', b.env || {}, b.campaign || 'livetest');
+          if (b.action === 'pull-main') { const r = pullMainRepo(b.paneId); return Response.json(r, { status: 'error' in r ? 400 : 200 }); }
+          if (b.action === 'sequence') { const r = await startSequence(b.cards || [], b.campaign || 'livetest', 'manual', b.paneId); return Response.json(r, { status: 'error' in r ? 400 : 200 }); }
+          const r = await startRun(b.suite || '', b.env || {}, b.campaign || 'livetest', b.paneId);
           return Response.json(r, { status: 'error' in r ? 400 : 200 });
         } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
       }
-      return Response.json({ suites: getCatalog(), globals: getGlobals(), run: getRun() }, { headers: { 'cache-control': 'no-store' } });
+      return Response.json({ ...getCatalog(url.searchParams.get('pane') || undefined), run: getRun() }, { headers: { 'cache-control': 'no-store' } });
     }
 
     if (p === '/__fleet/pane') {
@@ -185,6 +207,82 @@ const server = Bun.serve({
         }
       } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
     }
+    if (p === '/__fleet/links') {
+      try {
+        if (req.method === 'GET') return Response.json({ links: listLinks() });
+        if (req.method === 'POST') {
+          const b = (await req.json()) as Record<string, string>;
+          return Response.json({ ok: true, link: addLink({ ...b, savedAt: Date.now() }) });
+        }
+        if (req.method === 'DELETE') {
+          const b = (await req.json()) as { id?: string };
+          removeLink(b.id || '');
+          return Response.json({ ok: true });
+        }
+      } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    }
+    // Staging deploy: GET = current run state (log stream); POST {action} runs
+    // the gateway's deploy-staging.sh slice, pulls main on both repos, or cancels.
+    if (p === '/__fleet/deploy') {
+      try {
+        if (req.method === 'GET') return Response.json(getDeploy(), { headers: { 'cache-control': 'no-store' } });
+        if (req.method === 'POST') {
+          const b = (await req.json()) as {
+            action?: string; mode?: 'full' | 'ui' | 'migrations' | 'ef' | 'bankbot';
+            dry?: boolean; pull?: boolean; allowDirty?: boolean; skipGate?: boolean;
+          };
+          if (b.action === 'cancel') return Response.json(cancelDeploy());
+          if (b.action === 'pull-main') { const r = startPullMain(); return Response.json(r, { status: 'error' in r ? 400 : 200 }); }
+          const r = startDeploy({ mode: b.mode, dry: b.dry, pull: b.pull, allowDirty: b.allowDirty, skipGate: b.skipGate });
+          return Response.json(r, { status: 'error' in r ? 400 : 200 });
+        }
+      } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    }
+    if (p === '/__fleet/agent-notes') {
+      try {
+        if (req.method === 'GET') return Response.json({ notes: listNotes() });
+        if (req.method === 'POST') {
+          const b = (await req.json()) as Record<string, string>;
+          return Response.json({ ok: true, note: setNote({ ...b, savedAt: Date.now() }) });
+        }
+        if (req.method === 'DELETE') {
+          const b = (await req.json()) as { pane?: string };
+          removeNote(b.pane || '');
+          return Response.json({ ok: true });
+        }
+      } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    }
+    // Staging sync HUD: GET = last verify result; POST {force?} runs verify-staging.sh.
+    if (p === '/__fleet/verify') {
+      try {
+        if (req.method === 'GET') return Response.json(getVerify(), { headers: { 'cache-control': 'no-store' } });
+        if (req.method === 'POST') {
+          const b = (await req.json().catch(() => ({}))) as { force?: boolean };
+          return Response.json({ ...runVerify(!!b.force), state: getVerify() });
+        }
+      } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    }
+    if (p === '/__fleet/summarize' && req.method === 'POST') {
+      try {
+        const b = (await req.json()) as { text?: string };
+        return Response.json(await summarize(b.text || ''));
+      } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    }
+    if (p === '/__fleet/narrate' && req.method === 'POST') {
+      try {
+        const b = (await req.json()) as { text?: string };
+        return Response.json(await narrate(b.text || ''));
+      } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+    }
+    if (p === '/__fleet/tts') {
+      if (req.method === 'GET') return Response.json({ voices: TTS_VOICES });
+      if (req.method === 'POST') {
+        try {
+          const b = (await req.json()) as { text?: string; voice?: string };
+          return Response.json(await tts(b.text || '', b.voice || 'Kore'));
+        } catch (e) { return Response.json({ error: (e as Error).message }, { status: 400 }); }
+      }
+    }
     if (p === '/__fleet/respawn' && req.method === 'POST') {
       try {
         const b = (await req.json()) as { id?: string };
@@ -211,6 +309,9 @@ const server = Bun.serve({
 });
 
 console.log(`fleet-server listening on http://${server.hostname}:${server.port} (dist=${DIST})`);
+
+// Nightly live-test scheduler: check once a minute whether a scheduled run is due.
+setInterval(() => { void tickSchedule(); }, 60_000);
 
 // Watch the fleet and push notifications (team-idle / agent-waiting) to PWA subscribers.
 startNotifyLoop(() => getFleetState());

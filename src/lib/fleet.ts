@@ -21,6 +21,7 @@ export interface FleetAgent {
   ctxPct?: number;     // context window REMAINING (0–100), like brewbot /ctx
   ctxModel?: string;   // model id behind that context window
   waiting?: boolean;   // parked on a TUI menu, blocking on a human answer
+  bg?: boolean;        // idle glyph but a run_in_background shell is still running (→ working)
   plan?: string;       // Claude account the agent runs on (account-pinned spawn); absent = default
   worktree?: string;   // exact `maw wake --wt <worktree>` value for resume/bookmark; absent = primary checkout
 }

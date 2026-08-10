@@ -11,6 +11,9 @@ import { VariantPicker } from './VariantPicker';
 import { loadPresets, savePresets, PROMPT_MARK, type ChatPreset } from '../../lib/presets';
 import { PresetManager } from './PresetManager';
 import { LiveTestPanel } from './LiveTestPanel';
+import { HandoffMenu } from './HandoffMenu';
+import { MessageReader } from './MessageReader';
+import { latestMessage, summarizeText, speakText, stopSpeech, getVoice } from '../../lib/speech';
 
 const NAV_KEYS: Array<[string, string]> = [['↑', 'up'], ['↓', 'down'], ['←', 'left'], ['→', 'right']];
 type Tab = 'history' | 'live';
@@ -54,6 +57,11 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
   const [bm, setBm] = useState<'idle' | 'saving' | 'done' | 'err'>('idle');
   const [variantOpen, setVariantOpen] = useState(false);
   const [carrying, setCarrying] = useState(false);
+  const [showHandoffs, setShowHandoffs] = useState(false);
+  const [showReader, setShowReader] = useState(false);
+  const [more, setMore] = useState(false); // mobile: header actions drawer
+  const [sumState, setSumState] = useState<'idle' | 'working' | 'speaking'>('idle');
+  const [sumText, setSumText] = useState<string | null>(null);
 
   // Carry over to a fresh clean session (the old one writes a brief file; the fresh
   // agent reads it + continues). For when context runs low. ~minute, runs server-side.
@@ -64,6 +72,37 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
     try { await carryOverSession(agent.paneId); onClose(); }
     catch (e) { setErr((e as Error).message); setCarrying(false); }
   };
+
+  // Outer Summary: grab the agent's latest message, summarise it (Gemini) and read
+  // it aloud — without opening the Read panel. Click again while busy = stop.
+  const doSummaryRead = async () => {
+    if (sumState !== 'idle') { stopSpeech(); setSumState('idle'); return; }
+    setSumState('working'); setSumText(null); setErr(null);
+    try {
+      const last = latestMessage(await fetchTranscript(agent.paneId));
+      if (!last) { setErr('no message to summarise yet'); setSumState('idle'); return; }
+      const r = await summarizeText(last.text);
+      if (r.error || !r.summary) { setErr(`summary: ${r.error || 'none'}`); setSumState('idle'); return; }
+      setSumText(r.summary);
+      setSumState('speaking');
+      const label = `${cos.title}${agent.label && agent.label !== 'oracle' ? '·' + agent.label : ''}`;
+      await speakText(r.summary, getVoice(), { onEnd: () => setSumState('idle') }, { paneId: agent.paneId, label });
+    } catch (e) { setErr((e as Error).message); setSumState('idle'); }
+  };
+  useEffect(() => () => { stopSpeech(); }, []); // stop audio on close
+
+  // Keyboard shortcut: Ctrl+S (Cmd+S on Mac) → summarise + read the latest message,
+  // while this agent window is open. preventDefault blocks the browser Save dialog.
+  // Ref keeps the handler fresh without re-binding the listener.
+  const summaryRef = useRef(doSummaryRead);
+  useEffect(() => { summaryRef.current = doSummaryRead; });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); summaryRef.current(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // Bookmark this agent's resume recipe (role+worktree+account) so it can be closed
   // now and respawned later with its context. Only resumable for maw-wake agents.
@@ -120,6 +159,23 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
   useEffect(() => {
     try { if (input) localStorage.setItem(draftKey, input); else localStorage.removeItem(draftKey); } catch { /* ignore */ }
   }, [input, draftKey]);
+
+  // Lock the page behind the (full-screen on mobile) window so touch-scrolling
+  // moves the modal, not the town underneath it.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  // Auto-focus the message box when the window opens so dictation tools (Wispr
+  // Flow — hold Fn) type straight into the chat without a manual click. Caret at end.
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    const t = setTimeout(() => { el.focus(); const n = el.value.length; el.setSelectionRange(n, n); }, 0);
+    return () => clearTimeout(t);
+  }, []);
 
   // Esc closes the window. (To send Escape to the agent's TUI menu, use the esc nav button.)
   useEffect(() => {
@@ -179,73 +235,79 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
 
   const keyBtnStyle = { background: '#1a1a22', border: '1px solid rgba(255,255,255,0.12)', color: '#cdd2cd' };
 
+  // Secondary actions — inline on desktop, in a ⋯ drawer on mobile (shared markup).
+  const closeMore = () => setMore(false);
+  const actionBtns = (
+    <>
+      {slug && plans.length > 1 && (
+        <select value="" disabled={switching}
+          onChange={(e) => { if (e.target.value && confirm(`Switch ${agent.role}·${slug} to ${plans.find((p) => p.id === e.target.value)?.name}?\nKeeps the session + context (resumes in place on that account).`)) switchPlan(e.target.value); }}
+          className="text-[10px] px-1 py-0.5 rounded" style={{ background: '#a78bfa18', color: '#c4b5fd', border: '1px solid #a78bfa44' }}
+          title="switch this agent to another Claude account (keeps context, resumes in place)">
+          <option value="">{switching ? 'switching…' : `🔑 ${agent.plan || 'account'}`}</option>
+          {plans.map((pl) => <option key={pl.id} value={pl.id}>→ {pl.name}</option>)}
+        </select>
+      )}
+      <button onClick={closeSession} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: '#f8717122', color: '#f87171', border: '1px solid #f8717155' }} title="close (kill) this agent's session">{confirmClose ? 'confirm ✓' : '✖ close session'}</button>
+      {agent.worktree && (
+        <button onClick={doBookmark} disabled={bm === 'saving'} className="text-[10px] px-1.5 py-0.5 rounded disabled:opacity-40" style={{ background: '#fbbf2422', color: '#fbbf24', border: '1px solid #fbbf2455' }} title="bookmark this agent → respawn it later (same worktree + account, with context)">{bm === 'done' ? '🔖 saved' : bm === 'err' ? '🔖 failed' : bm === 'saving' ? '🔖 …' : '🔖 bookmark'}</button>
+      )}
+      <button onClick={doCarryOver} disabled={carrying} className="text-[10px] px-1.5 py-0.5 rounded disabled:opacity-40" style={{ background: '#22d3ee22', color: '#67e8f9', border: '1px solid #22d3ee55' }} title="context low? hand off to a fresh clean-context agent, briefed from this session">{carrying ? '↪ …' : '↪ carry over'}</button>
+      <button onClick={doSummaryRead} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }} title="summarise the latest message + read it aloud — shortcut: Ctrl+S (⌘S on Mac)">{sumState === 'working' ? '🔊 …' : sumState === 'speaking' ? '■ stop' : '🔊 summary'}</button>
+      <button onClick={() => { closeMore(); setShowReader(true); }} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: '#22c55e22', color: '#86efac', border: '1px solid #22c55e55' }} title="open the latest message in a clean reader">📖 read</button>
+      <button onClick={() => { closeMore(); setShowHandoffs(true); }} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: '#38bdf822', color: '#7dd3fc', border: '1px solid #38bdf855' }} title="find handoff file paths mentioned in this session and copy one">📂 handoffs</button>
+      <button onClick={() => { closeMore(); setVariantOpen(true); }} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }} title="change this agent's sprite colour/variant on the map">🎨 variant</button>
+      {isLiveTester && (
+        <button onClick={() => { closeMore(); setShowLiveTest(true); }} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: '#c084fc22', color: '#d9bbff', border: '1px solid #c084fc55' }} title="run live test cards on staging">🧪 run suites</button>
+      )}
+    </>
+  );
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 sm:p-6" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center bg-black/70 p-0 sm:p-6" onClick={onClose}>
       <div
-        className="flex flex-col w-[92vw] h-[88vh] rounded-xl border overflow-hidden shadow-2xl"
+        className="flex flex-col w-full h-[93dvh] rounded-t-2xl border-0 sm:w-[92vw] sm:h-[88vh] sm:rounded-xl sm:border overflow-hidden shadow-2xl"
         style={{ background: '#0c0c12', borderColor: cos.color + '66' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center gap-2 px-3 py-2 border-b border-white/10">
-          <span style={{ fontSize: 16 }}>{cos.emoji}</span>
-          <span className="font-semibold text-[13px]" style={{ color: cos.color }}>{cos.title}</span>
-          {agent.label && agent.label !== 'oracle' && <span className="text-[11px] text-white/45 font-mono">·{agent.label}</span>}
-          <span className="text-[10px] text-white/35 font-mono truncate">{agent.windowName}</span>
-          <div className="inline-flex rounded border border-white/10 overflow-hidden text-[10px] ml-1">
-            {(['history', 'live'] as const).map((tb) => (
-              <button
-                key={tb}
-                onClick={() => setTab(tb)}
-                className="px-1.5 py-0.5"
-                style={{ background: tab === tb ? '#c084fc22' : 'transparent', color: tab === tb ? '#d9bbff' : '#888' }}
-              >
-                {tb === 'history' ? '💬 history' : '🖥 live'}
-              </button>
-            ))}
+        {/* mobile: a grab handle to tap-close (the dim strip above also closes) */}
+        <button onClick={onClose} className="sm:hidden flex justify-center pt-2.5 pb-1.5 w-full shrink-0" aria-label="close">
+          <span className="w-10 h-1.5 rounded-full bg-white/30" />
+        </button>
+        <header className="border-b border-white/10">
+          <div className="flex items-center gap-2 px-3 py-2">
+            <span style={{ fontSize: 16 }}>{cos.emoji}</span>
+            <span className="font-semibold text-[13px] truncate shrink-0" style={{ color: cos.color }}>{cos.title}</span>
+            {agent.label && agent.label !== 'oracle' && <span className="text-[11px] text-white/45 font-mono shrink-0">·{agent.label}</span>}
+            <span className="text-[10px] text-white/35 font-mono truncate hidden sm:inline">{agent.windowName}</span>
+            <div className="inline-flex rounded border border-white/10 overflow-hidden text-[10px] shrink-0">
+              {(['history', 'live'] as const).map((tb) => (
+                <button key={tb} onClick={() => setTab(tb)} className="px-1.5 py-0.5"
+                  style={{ background: tab === tb ? '#c084fc22' : 'transparent', color: tab === tb ? '#d9bbff' : '#888' }}>
+                  {tb === 'history' ? '💬' : '🖥'}<span className="hidden sm:inline">{tb === 'history' ? ' history' : ' live'}</span>
+                </button>
+              ))}
+            </div>
+            <span className="flex-1" />
+            {agent.ctxPct != null && <span className="text-[11px] font-mono shrink-0" style={{ color: ctxColor(agent.ctxPct) }}>ctx {agent.ctxPct}%</span>}
+            {/* desktop: actions inline (wrap if needed) */}
+            <div className="hidden sm:flex items-center gap-1 flex-wrap justify-end">{actionBtns}</div>
+            {/* mobile: actions behind a ⋯ drawer */}
+            <button className="sm:hidden text-[14px] leading-none px-2 py-1 rounded shrink-0" style={{ background: '#ffffff10', color: '#cbd5e1', border: '1px solid #ffffff22' }}
+              onClick={() => setMore((m) => !m)} title="more actions">⋯</button>
+            <button onClick={onClose} className="shrink-0 grid place-items-center rounded-lg text-white/85 hover:text-white w-10 h-10 text-xl sm:w-auto sm:h-auto sm:text-base sm:px-1.5 sm:py-1"
+              style={{ background: '#ffffff18', border: '1px solid #ffffff33' }} title="close window">✕</button>
           </div>
-          {agent.ctxPct != null && (
-            <span className="text-[11px] ml-auto font-mono" style={{ color: ctxColor(agent.ctxPct) }}>ctx {agent.ctxPct}%</span>
-          )}
-          {slug && plans.length > 1 && (
-            <select
-              value=""
-              disabled={switching}
-              onChange={(e) => { if (e.target.value && confirm(`Switch ${agent.role}·${slug} to ${plans.find((p) => p.id === e.target.value)?.name}?\nKeeps the session + context (resumes in place on that account).`)) switchPlan(e.target.value); }}
-              className={`${agent.ctxPct == null ? 'ml-auto' : 'ml-1'} text-[10px] px-1 py-0.5 rounded`}
-              style={{ background: '#a78bfa18', color: '#c4b5fd', border: '1px solid #a78bfa44' }}
-              title="switch this agent to another Claude account (keeps context, resumes in place)"
-            >
-              <option value="">{switching ? 'switching…' : `🔑 ${agent.plan || 'account'}`}</option>
-              {plans.map((pl) => <option key={pl.id} value={pl.id}>→ {pl.name}</option>)}
-            </select>
-          )}
-          <button
-            onClick={closeSession}
-            className={`${agent.ctxPct == null ? 'ml-auto' : 'ml-1'} text-[10px] px-1.5 py-0.5 rounded`}
-            style={{ background: '#f8717122', color: '#f87171', border: '1px solid #f8717155' }}
-            title="close (kill) this agent's session"
-          >{confirmClose ? 'confirm ✓' : '✖ close session'}</button>
-          {agent.worktree && (
-            <button onClick={doBookmark} disabled={bm === 'saving'} className="ml-1 text-[10px] px-1.5 py-0.5 rounded disabled:opacity-40"
-              style={{ background: '#fbbf2422', color: '#fbbf24', border: '1px solid #fbbf2455' }}
-              title="bookmark this agent → respawn it later (same worktree + account, with context) from the 🔖 panel">
-              {bm === 'done' ? '🔖 saved' : bm === 'err' ? '🔖 failed' : bm === 'saving' ? '🔖 …' : '🔖 bookmark'}</button>
-          )}
-          <button onClick={doCarryOver} disabled={carrying} className="ml-1 text-[10px] px-1.5 py-0.5 rounded disabled:opacity-40"
-            style={{ background: '#22d3ee22', color: '#67e8f9', border: '1px solid #22d3ee55' }}
-            title="context low? hand off to a fresh clean-context agent, briefed from this session">{carrying ? '↪ …' : '↪ carry over'}</button>
-          <button onClick={() => setVariantOpen(true)} className="ml-1 text-[10px] px-1.5 py-0.5 rounded"
-            style={{ background: '#a78bfa22', color: '#c4b5fd', border: '1px solid #a78bfa55' }}
-            title="change this agent's sprite colour/variant on the map">🎨 variant</button>
-          {isLiveTester && (
-            <button onClick={() => setShowLiveTest(true)} className="ml-1 text-[10px] px-1.5 py-0.5 rounded"
-              style={{ background: '#c084fc22', color: '#d9bbff', border: '1px solid #c084fc55' }}
-              title="run live test suites (A/B/C/D/DEP) on staging">🧪 run suites</button>
-          )}
-          <button onClick={onClose} className="ml-1 text-white/50 hover:text-white/90 text-sm" title="close window">✕</button>
+          {more && <div className="flex flex-wrap gap-1.5 px-3 pb-2 sm:hidden">{actionBtns}</div>}
         </header>
 
         {err && <div className="px-3 py-1 text-[11px] text-red-300 bg-red-500/10">⚠ {err}</div>}
+        {sumText && (
+          <div className="flex items-start gap-2 px-3 py-1.5 text-[11px] text-violet-100 border-b border-white/10" style={{ background: '#a78bfa14' }}>
+            <span>📝 {sumState === 'speaking' ? '🔊 ' : ''}{sumText}</span>
+            <button onClick={() => { stopSpeech(); setSumState('idle'); setSumText(null); }} className="ml-auto text-white/50 hover:text-white/90 shrink-0" title="dismiss / stop">✕</button>
+          </div>
+        )}
 
         <pre
           ref={preRef}
@@ -253,7 +315,7 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
             const el = e.currentTarget;
             stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
           }}
-          className="flex-1 overflow-auto m-0 px-3 py-2 text-[11px] leading-snug whitespace-pre-wrap break-words"
+          className="flex-1 overflow-auto overscroll-contain m-0 px-3 py-2 text-[11px] leading-snug whitespace-pre-wrap break-words"
           style={{ background: '#08080c', color: '#cdd2cd', fontFamily: 'ui-monospace,Menlo,monospace' }}
         >
           {body}
@@ -287,14 +349,14 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
           <button
             onClick={() => send('nudge')}
             disabled={busy}
-            className="px-2.5 py-1.5 rounded text-[12px] shrink-0 disabled:opacity-50"
+            className="hidden sm:block px-2.5 py-1.5 rounded text-[12px] shrink-0 disabled:opacity-50"
             style={{ background: '#fbbf2422', color: '#fbbf24', border: '1px solid #fbbf2455' }}
             title="send the word 'nudge' + Enter"
           >👉 nudge</button>
           <button
             onClick={() => send('Please save your last full response verbatim as a GitHub gist — run `gh gist create` (secret) — and reply with ONLY the gist URL. The live pane scrolled past it so I can’t read the long output here.')}
             disabled={busy}
-            className="px-2.5 py-1.5 rounded text-[12px] shrink-0 disabled:opacity-50"
+            className="hidden sm:block px-2.5 py-1.5 rounded text-[12px] shrink-0 disabled:opacity-50"
             style={{ background: '#818cf822', color: '#a5b4fc', border: '1px solid #818cf855' }}
             title="ask the agent to save its last long reply as a gh gist and return the link"
           >📋 gist</button>
@@ -303,10 +365,10 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
             value={input}
             onChange={(e) => { setInput(e.target.value); const el = e.currentTarget; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 140) + 'px'; }}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); } }}
-            placeholder={`message ${cos.title}…  ·  Shift+Enter = newline`}
+            placeholder={`message ${cos.title}…`}
             disabled={busy}
             rows={1}
-            className="flex-1 rounded px-2.5 py-1.5 text-[12px] outline-none resize-none leading-snug"
+            className="flex-1 min-w-0 rounded px-2.5 py-1.5 text-[16px] sm:text-[12px] outline-none resize-none leading-snug"
             style={{ background: '#101018', border: '1px solid rgba(255,255,255,0.12)', color: '#e0e0e0', maxHeight: 140 }}
           />
           <button
@@ -324,7 +386,9 @@ export function AgentChat({ agent, onClose }: { agent: FleetAgent; onClose: () =
           onClose={() => setManaging(false)}
         />
       )}
-      {showLiveTest && <LiveTestPanel onClose={() => setShowLiveTest(false)} />}
+      {showLiveTest && <LiveTestPanel agent={agent} onClose={() => setShowLiveTest(false)} />}
+      {showHandoffs && <HandoffMenu paneId={agent.paneId} onClose={() => setShowHandoffs(false)} />}
+      {showReader && <MessageReader paneId={agent.paneId} title={`${cos.title}${agent.label && agent.label !== 'oracle' ? '·' + agent.label : ''}`} onClose={() => setShowReader(false)} />}
       {variantOpen && (
         <VariantPicker
           label={`${cos.title}${agent.label && agent.label !== 'oracle' ? '·' + agent.label : ''}`}
